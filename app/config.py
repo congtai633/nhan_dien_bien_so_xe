@@ -37,6 +37,10 @@ class AppConfig:
     scan_timeout_seconds: float
     crop_padding_ratio: float
     square_plate_labels: frozenset[str]
+    stable_frame_count: int
+    candidate_window_seconds: float
+    min_sharpness_score: float
+    max_center_shift_ratio: float
 
     @classmethod
     def from_env(cls) -> "AppConfig":
@@ -64,6 +68,10 @@ class AppConfig:
             scan_timeout_seconds=float(os.getenv("SCAN_TIMEOUT_SECONDS", "15")),
             crop_padding_ratio=float(os.getenv("CROP_PADDING_RATIO", "0.08")),
             square_plate_labels=frozenset(labels),
+            stable_frame_count=int(os.getenv("STABLE_FRAME_COUNT", "5")),
+            candidate_window_seconds=float(os.getenv("CANDIDATE_WINDOW_SECONDS", "1.5")),
+            min_sharpness_score=float(os.getenv("MIN_SHARPNESS_SCORE", "100.0")),
+            max_center_shift_ratio=float(os.getenv("MAX_CENTER_SHIFT_RATIO", "0.03"))
         )
         config.validate()
         return config
@@ -87,3 +95,11 @@ class AppConfig:
             raise ValueError("SCAN_TIMEOUT_SECONDS phải lớn hơn 0.")
         if not 0.0 <= self.crop_padding_ratio <= 0.5:
             raise ValueError("CROP_PADDING_RATIO phải nằm trong khoảng [0, 0.5].")
+        if self.stable_frame_count <= 0:
+            raise ValueError("STABLE_FRAME_COUNT phải lớn hơn 0.")
+        if self.candidate_window_seconds <= 0:
+            raise ValueError("CANDIDATE_WINDOW_SECONDS phải lớn hơn 0.")
+        if self.min_sharpness_score < 0:
+            raise ValueError("MIN_SHARPNESS_SCORE phải lớn hơn hoặc bằng 0.")
+        if not 0.0 <= self.max_center_shift_ratio <= 1.0:
+            raise ValueError("MAX_CENTER_SHIFT_RATIO phải nằm trong khoảng [0, 1].")

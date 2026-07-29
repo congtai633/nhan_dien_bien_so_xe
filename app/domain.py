@@ -28,6 +28,11 @@ class PlateDetection:
     class_name: str
     confidence: float
 
+@dataclass(frozen=True)
+class FrameCandidate:
+    crop: object
+    detection: PlateDetection
+    sharpness_score: float
 
 @dataclass(frozen=True)
 class FormattedPlate:

@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from app.services.image_processor import PlateImageProcessor
     from app.services.plate_detector import YOLOPlateDetector
     from app.services.plate_formatter import VietnamesePlateFormatter
+    from app.services.frame_selector import FrameSelector
     from app.ui import OpenCVDisplay
 
 
@@ -36,6 +37,7 @@ class LicensePlateController:
         config: AppConfig,
         camera: CameraService,
         detector: YOLOPlateDetector,
+        frame_selector: FrameSelector,
         image_processor: PlateImageProcessor,
         ocr: OCRProvider,
         formatter: VietnamesePlateFormatter,
@@ -44,6 +46,7 @@ class LicensePlateController:
         self.config = config
         self.camera = camera
         self.detector = detector
+        self.frame_selector = frame_selector
         self.image_processor = image_processor
         self.ocr = ocr
         self.formatter = formatter
@@ -110,6 +113,7 @@ class LicensePlateController:
 
         self.state = AppState.SCANNING
         self.scan_started_at = time.monotonic()
+        self.frame_selector.reset()
         self.message = (
             "Checking locally... waiting for confidence >= "
             f"{self.config.detection_threshold:.2f}"
@@ -151,7 +155,33 @@ class LicensePlateController:
                 None,
             )
             if candidate is not None:
-                self._submit_for_ocr(frame, candidate)
+                crop = self.image_processor.crop(
+                    frame,
+                    candidate.box,
+                )
+
+                selected = self.frame_selector.observe(
+                    crop=crop,
+                    detection=candidate,
+                    frame_shape=frame.shape,
+                )
+
+                self.message = (
+                    "Stabilizing plate "
+                    f"{self.frame_selector.stable_count}/"
+                    f"{self.config.stable_frame_count} | "
+                    f"sharpness="
+                    f"{self.frame_selector.last_sharpness_score:.0f}"
+                )
+
+                if selected is not None:
+                    self._submit_for_ocr(
+                        selected.crop,
+                        selected.detection,
+                        selected.sharpness_score,
+                    )
+            else:
+                self.frame_selector.reset()
             return detections
         except Exception as exc:
             LOGGER.exception("Lỗi khi chạy YOLO: %s", exc)
@@ -159,12 +189,11 @@ class LicensePlateController:
             self.message = f"Detection error: {exc}"
             return []
 
-    def _submit_for_ocr(self, frame, detection: PlateDetection) -> None:
+    def _submit_for_ocr(self, crop, detection: PlateDetection, sharpness_score: float) -> None:
         # Chuyển trạng thái trước khi tạo job để frame kế tiếp không gửi lần hai.
         self.state = AppState.PROCESSING
         self.message = "Plate captured. Sending one cropped image to Google Vision..."
 
-        crop = self.image_processor.crop(frame, detection.box)
         ocr_image = self.image_processor.prepare_for_ocr(
             crop,
             detection.class_name,
@@ -176,9 +205,10 @@ class LicensePlateController:
             ocr_image,
         )
         LOGGER.info(
-            "Đã crop %s với confidence %.3f; bắt đầu OCR một lần.",
+            "Đã crop %s với confidence %.3f, sharpness=%.1f; bắt đầu OCR một lần.",
             detection.class_name,
             detection.confidence,
+            sharpness_score,
         )
 
     def _recognize(

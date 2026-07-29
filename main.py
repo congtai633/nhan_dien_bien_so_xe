@@ -11,6 +11,7 @@ from app.services.google_vision_ocr import GoogleVisionOCR
 from app.services.image_processor import PlateImageProcessor
 from app.services.plate_detector import YOLOPlateDetector
 from app.services.plate_formatter import VietnamesePlateFormatter
+from app.services.frame_selector import FrameSelector
 from app.ui import OpenCVDisplay
 
 
@@ -34,6 +35,12 @@ def build_application(config: AppConfig) -> LicensePlateController:
         ocr=GoogleVisionOCR(config.google_credentials_path),
         formatter=VietnamesePlateFormatter(),
         display=OpenCVDisplay(),
+        frame_selector=FrameSelector(
+            stable_frame_count=config.stable_frame_count,
+            candidate_window_seconds=config.candidate_window_seconds,
+            min_sharpness_score=config.min_sharpness_score,
+            max_center_shift_ratio=config.max_center_shift_ratio,
+        ),
     )
 
 
