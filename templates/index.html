@@ -1,18 +1,13 @@
 <!DOCTYPE html>
 <html lang="vi">
+
 <head>
     <meta charset="UTF-8">
-    <meta
-        name="viewport"
-        content="width=device-width, initial-scale=1.0"
-    >
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
     <title>Nhận diện biển số xe</title>
 
-    <link
-        rel="stylesheet"
-        href="{{ url_for('static', filename='css/style.css') }}"
-    >
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 
 <body>
@@ -25,18 +20,52 @@
             </p>
         </header>
 
+        <section class="camera-panel card">
+            <h2>Camera trực tiếp</h2>
+
+            <div class="camera-frame">
+                <video
+                    id="camera"
+                    autoplay
+                    playsinline
+                    muted
+                    hidden
+                ></video>
+
+                <p id="camera-placeholder">
+                    Camera chưa được mở.
+                </p>
+            </div>
+
+            <div class="camera-actions">
+                <button id="open-camera" type="button">
+                    Mở camera
+                </button>
+
+                <button id="capture-camera" type="button" disabled>
+                    Chụp ảnh
+                </button>
+
+                <button
+                    id="close-camera"
+                    class="secondary-button"
+                    type="button"
+                    disabled
+                >
+                    Tắt camera
+                </button>
+            </div>
+
+            <p id="message" class="status"></p>
+            <canvas id="camera-canvas" hidden></canvas>
+        </section>
+
         <section class="content">
             <form id="scanForm" class="card">
-                <h2>Chọn ảnh cần nhận diện</h2>
+                <h2 id="preview-title">Chọn ảnh cần nhận diện</h2>
 
                 <label class="upload-area" for="imageInput">
-                    <input
-                        id="imageInput"
-                        name="image"
-                        type="file"
-                        accept="image/*"
-                        hidden
-                    >
+                    <input id="imageInput" name="image" type="file" accept="image/*" hidden>
 
                     <div id="uploadPlaceholder">
                         <div class="upload-icon">＋</div>
@@ -44,11 +73,7 @@
                         <span>Hỗ trợ JPG, JPEG và PNG</span>
                     </div>
 
-                    <img
-                        id="previewImage"
-                        alt="Ảnh xem trước"
-                        hidden
-                    >
+                    <img id="previewImage" alt="Ảnh cần nhận diện" hidden>
                 </label>
 
                 <button id="scanButton" type="submit" disabled>
@@ -94,8 +119,7 @@
         </section>
     </main>
 
-    <script
-        src="{{ url_for('static', filename='js/app.js') }}"
-    ></script>
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 </body>
+
 </html>

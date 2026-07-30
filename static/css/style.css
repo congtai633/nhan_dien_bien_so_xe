@@ -206,4 +206,54 @@ button:disabled {
     .upload-area {
         min-height: 260px;
     }
+    .camera-actions {
+        grid-template-columns: 1fr;
+    }
+}
+
+
+
+.camera-panel {
+    margin: 24px 0;
+}
+
+.camera-frame {
+    min-height: 320px;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    border: 1px dashed #aab7b8;
+    border-radius: 8px;
+    background: #111827;
+}
+
+#camera {
+    display: block;
+    width: 100%;
+    max-height: 520px;
+    object-fit: contain;
+}
+
+#camera-placeholder {
+    color: #d5d8dc;
+}
+
+.camera-actions {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px;
+    margin-top: 16px;
+}
+
+.camera-actions button {
+    width: 100%;
+    min-height: 52px;
+}
+
+.secondary-button {
+    background: #5d6d7e;
+}
+
+#camera-canvas {
+    display: none;
 }
