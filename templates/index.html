@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>Nhận diện biển số xe</title>
+
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='css/style.css') }}"
+    >
+</head>
+
+<body>
+    <main class="container">
+        <header class="header">
+            <p class="subtitle">YOLOv8 & Google Cloud Vision</p>
+            <h1>Hệ thống nhận diện biển số xe</h1>
+            <p>
+                Tải ảnh phương tiện lên để phát hiện và đọc biển số xe.
+            </p>
+        </header>
+
+        <section class="content">
+            <form id="scanForm" class="card">
+                <h2>Chọn ảnh cần nhận diện</h2>
+
+                <label class="upload-area" for="imageInput">
+                    <input
+                        id="imageInput"
+                        name="image"
+                        type="file"
+                        accept="image/*"
+                        hidden
+                    >
+
+                    <div id="uploadPlaceholder">
+                        <div class="upload-icon">＋</div>
+                        <strong>Nhấn để chọn ảnh</strong>
+                        <span>Hỗ trợ JPG, JPEG và PNG</span>
+                    </div>
+
+                    <img
+                        id="previewImage"
+                        alt="Ảnh xem trước"
+                        hidden
+                    >
+                </label>
+
+                <button id="scanButton" type="submit" disabled>
+                    Nhận diện biển số
+                </button>
+
+                <p id="statusMessage" class="status"></p>
+            </form>
+
+            <section class="card result-card">
+                <h2>Kết quả nhận diện</h2>
+
+                <div id="emptyResult" class="empty-result">
+                    Kết quả sẽ hiển thị tại đây sau khi xử lý ảnh.
+                </div>
+
+                <div id="resultContent" hidden>
+                    <div class="plate">
+                        <span id="plateText">--</span>
+                    </div>
+
+                    <div class="result-row">
+                        <span>Loại biển số</span>
+                        <strong id="plateType">--</strong>
+                    </div>
+
+                    <div class="result-row">
+                        <span>Độ tin cậy</span>
+                        <strong id="confidence">--</strong>
+                    </div>
+
+                    <div class="result-row">
+                        <span>Văn bản OCR</span>
+                        <strong id="rawText">--</strong>
+                    </div>
+
+                    <div class="result-row">
+                        <span>Trạng thái</span>
+                        <strong id="resultStatus">--</strong>
+                    </div>
+                </div>
+            </section>
+        </section>
+    </main>
+
+    <script
+        src="{{ url_for('static', filename='js/app.js') }}"
+    ></script>
+</body>
+</html>

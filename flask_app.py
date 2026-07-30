@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, render_template, request
 from app.config import AppConfig
 from app.services.google_vision_ocr import GoogleVisionOCR
 from app.services.image_processor import PlateImageProcessor
@@ -17,6 +17,10 @@ def create_app() -> Flask:
 
     config = AppConfig.from_env()
     recognition_service = build_recognition_service(config)
+
+    @app.get("/")
+    def index():
+        return render_template("index.html")
 
     @app.get("/api/v1/health")
     def health():
