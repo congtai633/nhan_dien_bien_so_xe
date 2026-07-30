@@ -44,6 +44,9 @@ class _Display:
     def close(self):
         self.closed = True
 
+class _FrameSelector:
+    def reset(self):
+        pass
 
 class ControllerControlTests(unittest.TestCase):
     def setUp(self):
@@ -57,6 +60,7 @@ class ControllerControlTests(unittest.TestCase):
             ocr=object(),
             formatter=object(),
             display=self.display,
+            frame_selector=_FrameSelector()
         )
 
     def tearDown(self):

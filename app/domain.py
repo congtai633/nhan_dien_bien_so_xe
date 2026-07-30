@@ -48,3 +48,12 @@ class ProcessingResult:
     status: str
     formatted_plate: FormattedPlate | None = None
     error_message: str | None = None
+
+@dataclass(frozen=True)
+class RecognitionResult:
+    """Kết quả nhận diện biển số từ một ảnh tĩnh."""
+
+    crop: object
+    detection: PlateDetection
+    formatted_plate: FormattedPlate
+    status: str

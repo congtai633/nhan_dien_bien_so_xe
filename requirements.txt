@@ -3,3 +3,4 @@ opencv-python
 google-cloud-vision
 python-dotenv
 numpy
+Flask
