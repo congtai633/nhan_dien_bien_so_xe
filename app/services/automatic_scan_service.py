@@ -26,6 +26,8 @@ class _ScanSession:
     selector: FrameSelector
     started_at: float
     best_candidate: FrameCandidate | None = None
+    frame_width: int = 0
+    frame_height: int = 0
     finished: bool = False
     lock: Lock = field(default_factory=Lock)
 
@@ -74,6 +76,7 @@ class AutomaticScanService:
                     "Phiên quét không tồn tại hoặc đã kết thúc."
                 )
 
+            session.frame_height, session.frame_width = image.shape[:2]
             candidate_data = self.recognition_service.detect_candidate(image)
             elapsed = self._clock() - session.started_at
 
@@ -118,6 +121,8 @@ class AutomaticScanService:
                 status=AutoScanStatus.COLLECTING,
                 crop=crop,
                 detection=detection,
+                frame_width=session.frame_width,
+                frame_height=session.frame_height,
                 stable_count=session.selector.stable_count,
                 required_stable_count=session.selector.stable_frame_count,
                 sharpness_score=session.selector.last_sharpness_score,
@@ -162,6 +167,8 @@ class AutomaticScanService:
                 status=AutoScanStatus.SUCCESS,
                 crop=result.crop,
                 detection=result.detection,
+                frame_width=session.frame_width,
+                frame_height=session.frame_height,
                 formatted_plate=result.formatted_plate,
                 stable_count=stable_count,
                 required_stable_count=stable_count,
@@ -172,6 +179,8 @@ class AutomaticScanService:
             status=AutoScanStatus.RETRY_REQUIRED,
             crop=result.crop,
             detection=result.detection,
+            frame_width=session.frame_width,
+            frame_height=session.frame_height,
             formatted_plate=result.formatted_plate,
             stable_count=stable_count,
             required_stable_count=stable_count,
@@ -204,6 +213,8 @@ class AutomaticScanService:
             status=AutoScanStatus.RETRY_REQUIRED,
             crop=best.crop,
             detection=best.detection,
+            frame_width=session.frame_width,
+            frame_height=session.frame_height,
             stable_count=session.selector.stable_count,
             required_stable_count=session.selector.stable_frame_count,
             sharpness_score=best.sharpness_score,

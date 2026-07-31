@@ -252,6 +252,7 @@ def _auto_scan_payload(result) -> dict:
         return payload
 
     if result.status == AutoScanStatus.COLLECTING:
+        _append_detection_payload(payload, result)
         payload["message"] = (
             "Đã thấy biển số, đang chọn khung hình rõ nhất."
         )
@@ -263,16 +264,8 @@ def _auto_scan_payload(result) -> dict:
         )
         return payload
 
-    payload.update(
-        {
-            "crop_image": _image_to_data_url(result.crop),
-            "plate_type": result.detection.class_name,
-            "confidence": round(
-                result.detection.confidence,
-                4,
-            ),
-        }
-    )
+    _append_detection_payload(payload, result)
+    payload["crop_image"] = _image_to_data_url(result.crop)
 
     if result.status == AutoScanStatus.SUCCESS:
         payload.update(
@@ -293,6 +286,33 @@ def _auto_scan_payload(result) -> dict:
         }
     )
     return payload
+
+
+def _append_detection_payload(payload: dict, result) -> None:
+    """Thêm tọa độ YOLO để frontend vẽ box lên đúng frame camera."""
+
+    detection = result.detection
+
+    if detection is None:
+        return
+
+    box = detection.box
+    payload.update(
+        {
+            "plate_type": detection.class_name,
+            "confidence": round(detection.confidence, 4),
+            "bounding_box": {
+                "x1": box.x1,
+                "y1": box.y1,
+                "x2": box.x2,
+                "y2": box.y2,
+            },
+            "frame_size": {
+                "width": result.frame_width,
+                "height": result.frame_height,
+            },
+        }
+    )
 
 
 def _retry_message(reason: str | None) -> str:

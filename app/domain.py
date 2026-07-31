@@ -52,6 +52,8 @@ class AutoScanResult:
     status: AutoScanStatus
     crop: object | None = None
     detection: PlateDetection | None = None
+    frame_width: int = 0
+    frame_height: int = 0
     formatted_plate: FormattedPlate | None = None
     stable_count: int = 0
     required_stable_count: int = 0

@@ -5,22 +5,17 @@ const plateType = document.getElementById("plateType");
 const confidence = document.getElementById("confidence");
 const cropImage = document.getElementById("cropImage");
 const statusMessage = document.getElementById("statusMessage");
-const resultStatusBadge = document.getElementById(
-    "result-status-badge"
-);
+const resultStatusBadge = document.getElementById("result-status-badge");
 
 const camera = document.getElementById("camera");
-const cameraPlaceholder = document.getElementById(
-    "camera-placeholder"
-);
-const cameraStatusBadge = document.getElementById(
-    "camera-status-badge"
-);
+const cameraPlaceholder = document.getElementById("camera-placeholder");
+const cameraStatusBadge = document.getElementById("camera-status-badge");
 const scanIndicator = document.getElementById("scan-indicator");
 const openCameraButton = document.getElementById("open-camera");
 const restartScanButton = document.getElementById("restart-scan");
 const closeCameraButton = document.getElementById("close-camera");
 const cameraCanvas = document.getElementById("camera-canvas");
+const cameraOverlay = document.getElementById("camera-overlay");
 const message = document.getElementById("message");
 
 const AUTO_SCAN_DELAY_MS = 250;
@@ -30,11 +25,13 @@ let autoScanSessionId = null;
 let autoScanTimer = null;
 let autoScanBusy = false;
 let autoScanStopped = true;
+let lastDetectionData = null;
 
 openCameraButton.addEventListener("click", openCamera);
 restartScanButton.addEventListener("click", restartAutomaticScan);
 closeCameraButton.addEventListener("click", stopCamera);
 window.addEventListener("beforeunload", stopCamera);
+window.addEventListener("resize", redrawBoundingBox);
 
 async function openCamera() {
     if (!navigator.mediaDevices?.getUserMedia) {
@@ -68,6 +65,7 @@ async function openCamera() {
 
         camera.hidden = false;
         cameraPlaceholder.hidden = true;
+        resizeCameraOverlay();
         closeCameraButton.disabled = false;
         restartScanButton.hidden = true;
 
@@ -187,6 +185,7 @@ async function scanNextCameraFrame() {
             response.status === 202 &&
             ["SEARCHING", "COLLECTING"].includes(data.status)
         ) {
+            updateBoundingBox(data);
             updateScanningProgress(data);
             scheduleNextAutoFrame();
             return;
@@ -197,6 +196,7 @@ async function scanNextCameraFrame() {
             data.status === "PLATE_NOT_FOUND"
         ) {
             finishAutomaticScan();
+            clearBoundingBox();
             restartScanButton.hidden = false;
 
             message.textContent =
@@ -216,6 +216,7 @@ async function scanNextCameraFrame() {
         }
 
         finishAutomaticScan();
+        clearBoundingBox();
         renderRecognitionResult(data);
         restartScanButton.hidden = false;
 
@@ -312,6 +313,7 @@ async function stopAutomaticScan(cancelServer) {
 function stopCamera() {
     void stopAutomaticScan(true);
     releaseCameraStream();
+    clearBoundingBox();
 
     camera.srcObject = null;
     camera.hidden = true;
@@ -417,6 +419,7 @@ function renderRecognitionResult(data) {
 }
 
 function resetResult() {
+    clearBoundingBox();
     emptyResult.hidden = false;
     resultContent.hidden = true;
 
@@ -428,6 +431,133 @@ function resetResult() {
 
     setBadge(resultStatusBadge, "Đang chờ", "idle");
     showStatus("", "");
+}
+
+function updateBoundingBox(data) {
+    if (!data.bounding_box || !data.frame_size) {
+        clearBoundingBox();
+        return;
+    }
+
+    lastDetectionData = data;
+    drawBoundingBox(data);
+}
+
+function redrawBoundingBox() {
+    resizeCameraOverlay();
+
+    if (lastDetectionData) {
+        drawBoundingBox(lastDetectionData);
+    }
+}
+
+function resizeCameraOverlay() {
+    const width = camera.clientWidth;
+    const height = camera.clientHeight;
+    const pixelRatio = window.devicePixelRatio || 1;
+
+    cameraOverlay.width = Math.max(
+        Math.round(width * pixelRatio),
+        1
+    );
+    cameraOverlay.height = Math.max(
+        Math.round(height * pixelRatio),
+        1
+    );
+}
+
+function drawBoundingBox(data) {
+    const context = cameraOverlay.getContext("2d");
+    const sourceWidth = Number(data.frame_size.width);
+    const sourceHeight = Number(data.frame_size.height);
+    const displayWidth = camera.clientWidth;
+    const displayHeight = camera.clientHeight;
+
+    if (
+        !context ||
+        sourceWidth <= 0 ||
+        sourceHeight <= 0 ||
+        displayWidth <= 0 ||
+        displayHeight <= 0
+    ) {
+        clearBoundingBox();
+        return;
+    }
+
+    resizeCameraOverlay();
+
+    const pixelRatio = window.devicePixelRatio || 1;
+    context.setTransform(
+        pixelRatio,
+        0,
+        0,
+        pixelRatio,
+        0,
+        0
+    );
+    context.clearRect(0, 0, displayWidth, displayHeight);
+
+    // Video dùng object-fit: cover, vì vậy cần tính cả phần ảnh bị cắt.
+    const scale = Math.max(
+        displayWidth / sourceWidth,
+        displayHeight / sourceHeight
+    );
+    const offsetX = (displayWidth - sourceWidth * scale) / 2;
+    const offsetY = (displayHeight - sourceHeight * scale) / 2;
+    const box = data.bounding_box;
+    const x = Number(box.x1) * scale + offsetX;
+    const y = Number(box.y1) * scale + offsetY;
+    const width = (Number(box.x2) - Number(box.x1)) * scale;
+    const height = (Number(box.y2) - Number(box.y1)) * scale;
+
+    if (width <= 0 || height <= 0) {
+        clearBoundingBox();
+        return;
+    }
+
+    const lineWidth = 3;
+    const label =
+        `${data.plate_type || "Biển số"} ` +
+        `${(Number(data.confidence || 0) * 100).toFixed(1)}%`;
+
+    context.lineWidth = lineWidth;
+    context.strokeStyle = "#22c55e";
+    context.shadowColor = "rgb(0 0 0 / 45%)";
+    context.shadowBlur = 4;
+    context.strokeRect(x, y, width, height);
+    context.shadowBlur = 0;
+
+    context.font =
+        "700 13px Inter, ui-sans-serif, system-ui, sans-serif";
+    const labelPaddingX = 8;
+    const labelHeight = 26;
+    const labelWidth =
+        context.measureText(label).width + labelPaddingX * 2;
+    const labelY = Math.max(y - labelHeight, 0);
+
+    context.fillStyle = "#16a34a";
+    context.fillRect(x, labelY, labelWidth, labelHeight);
+    context.fillStyle = "#ffffff";
+    context.textBaseline = "middle";
+    context.fillText(
+        label,
+        x + labelPaddingX,
+        labelY + labelHeight / 2
+    );
+}
+
+function clearBoundingBox() {
+    lastDetectionData = null;
+    const context = cameraOverlay.getContext("2d");
+
+    if (context) {
+        context.clearRect(
+            0,
+            0,
+            cameraOverlay.width,
+            cameraOverlay.height
+        );
+    }
 }
 
 function setBadge(element, text, state) {
