@@ -24,13 +24,7 @@
             <h2>Camera trực tiếp</h2>
 
             <div class="camera-frame">
-                <video
-                    id="camera"
-                    autoplay
-                    playsinline
-                    muted
-                    hidden
-                ></video>
+                <video id="camera" autoplay playsinline muted hidden></video>
 
                 <p id="camera-placeholder">
                     Camera chưa được mở.
@@ -46,12 +40,7 @@
                     Chụp ảnh
                 </button>
 
-                <button
-                    id="close-camera"
-                    class="secondary-button"
-                    type="button"
-                    disabled
-                >
+                <button id="close-camera" class="secondary-button" type="button" disabled>
                     Tắt camera
                 </button>
             </div>
@@ -91,8 +80,13 @@
                 </div>
 
                 <div id="resultContent" hidden>
-                    <div class="plate">
-                        <span id="plateText">--</span>
+                    <div class="plate-crop">
+                        <img id="cropImage" alt="Ảnh biển số được phát hiện" hidden>
+                    </div>
+
+                    <div class="result-row">
+                        <span>Biển số nhận diện</span>
+                        <strong id="plateText">--</strong>
                     </div>
 
                     <div class="result-row">
@@ -103,16 +97,6 @@
                     <div class="result-row">
                         <span>Độ tin cậy</span>
                         <strong id="confidence">--</strong>
-                    </div>
-
-                    <div class="result-row">
-                        <span>Văn bản OCR</span>
-                        <strong id="rawText">--</strong>
-                    </div>
-
-                    <div class="result-row">
-                        <span>Trạng thái</span>
-                        <strong id="resultStatus">--</strong>
                     </div>
                 </div>
             </section>

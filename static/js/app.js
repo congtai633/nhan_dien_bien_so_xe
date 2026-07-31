@@ -23,6 +23,7 @@ const message = document.querySelector("#message");
 const captureCameraButton = document.querySelector("#capture-camera");
 const cameraCanvas = document.querySelector("#camera-canvas");
 const previewTitle = document.querySelector("#preview-title");
+const cropImage = document.getElementById("cropImage");
 
 let cameraStream = null;
 let previewUrl = null;
@@ -89,8 +90,8 @@ form.addEventListener("submit", async (event) => {
 
         plateText.textContent = data.plate || "Không xác định";
         plateType.textContent = data.plate_type || "--";
-        rawText.textContent = data.raw_text || "--";
-        resultStatus.textContent = data.status || "--";
+        // rawText.textContent = data.raw_text || "--";
+        // resultStatus.textContent = data.status || "--";
 
         const confidencePercent =
             Number(data.confidence || 0) * 100;
@@ -98,6 +99,15 @@ form.addEventListener("submit", async (event) => {
         confidence.textContent =
             `${confidencePercent.toFixed(2)}%`;
 
+        if (!data.crop_image) {
+            throw new Error("Flask chưa trả về ảnh crop.");
+        }
+
+        cropImage.src = data.crop_image.startsWith("data:image/")
+            ? data.crop_image
+            : `data:image/jpeg;base64,${data.crop_image}`;
+
+        cropImage.hidden = false;   
         emptyResult.hidden = true;
         resultContent.hidden = false;
 

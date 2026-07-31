@@ -1,3 +1,5 @@
+import base64
+
 import cv2
 import numpy as np
 
@@ -9,6 +11,23 @@ from app.services.plate_detector import YOLOPlateDetector
 from app.services.plate_formatter import VietnamesePlateFormatter
 from app.services.recognition_service import PlateRecognitionService
 
+
+def _image_to_data_url(image) -> str:
+    """Chuyển ảnh OpenCV thành chuỗi mà trình duyệt hiển thị được."""
+
+    if image is None or not hasattr(image, "size") or image.size == 0:
+        raise ValueError("Ảnh crop rỗng hoặc không hợp lệ.")
+
+    success, encoded_image = cv2.imencode(".jpg", image)
+
+    if not success:
+        raise ValueError("Không thể mã hóa ảnh crop.")
+
+    encoded_text = base64.b64encode(
+        encoded_image.tobytes()
+    ).decode("ascii")
+
+    return f"data:image/jpeg;base64,{encoded_text}"
 
 def create_app() -> Flask:
     """Tạo và cấu hình ứng dụng Flask."""
@@ -85,6 +104,17 @@ def create_app() -> Flask:
                     "message": "Không tìm thấy biển số đạt ngưỡng confidence.",
                 }
             ), 422
+        try:
+            crop_image = _image_to_data_url(result.crop)
+        except ValueError as exc:
+            return jsonify(
+                {
+                    "success": False,
+                    "status": "IMAGE_ENCODING_ERROR",
+                    "message": str(exc),
+                }
+            ), 500
+
 
         formatted = result.formatted_plate
 
@@ -96,6 +126,7 @@ def create_app() -> Flask:
                 "raw_text": formatted.raw_text,
                 "is_valid": formatted.is_valid,
                 "plate_type": result.detection.class_name,
+                "crop_image": crop_image,
                 "confidence": round(
                     result.detection.confidence,
                     4,
