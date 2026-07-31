@@ -14,6 +14,16 @@ class AppState(str, Enum):
     ERROR = "ERROR"
 
 
+class AutoScanStatus(str, Enum):
+    """Các trạng thái trả về trong một phiên camera tự động."""
+
+    SEARCHING = "SEARCHING"
+    COLLECTING = "COLLECTING"
+    SUCCESS = "SUCCESS"
+    RETRY_REQUIRED = "RETRY_REQUIRED"
+    PLATE_NOT_FOUND = "PLATE_NOT_FOUND"
+
+
 @dataclass(frozen=True)
 class BoundingBox:
     x1: int
@@ -33,6 +43,20 @@ class FrameCandidate:
     crop: object
     detection: PlateDetection
     sharpness_score: float
+
+
+@dataclass(frozen=True)
+class AutoScanResult:
+    """Kết quả của một lần gửi frame trong phiên camera tự động."""
+
+    status: AutoScanStatus
+    crop: object | None = None
+    detection: PlateDetection | None = None
+    formatted_plate: FormattedPlate | None = None
+    stable_count: int = 0
+    required_stable_count: int = 0
+    sharpness_score: float = 0.0
+    reason: str | None = None
 
 @dataclass(frozen=True)
 class FormattedPlate:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from app.domain import RecognitionResult
+from app.domain import PlateDetection, RecognitionResult
 from app.interfaces import OCRProvider
 
 if TYPE_CHECKING:
@@ -30,6 +30,19 @@ class PlateRecognitionService:
 
     def recognize(self, image) -> RecognitionResult | None:
         """Nhận diện biển số tốt nhất trong một ảnh."""
+
+        candidate = self.detect_candidate(image)
+        if candidate is None:
+            return None
+
+        crop, detection = candidate
+        return self.recognize_candidate(crop, detection)
+
+    def detect_candidate(
+        self,
+        image,
+    ) -> tuple[object, PlateDetection] | None:
+        """Chỉ chạy YOLO và crop; tuyệt đối chưa gọi OCR."""
 
         # 1. Kiểm tra ảnh đầu vào
         if image is None or not hasattr(image, "size") or image.size == 0:
@@ -57,6 +70,15 @@ class PlateRecognitionService:
             image,
             detection.box,
         )
+
+        return crop, detection
+
+    def recognize_candidate(
+        self,
+        crop,
+        detection: PlateDetection,
+    ) -> RecognitionResult:
+        """OCR đúng một crop đã được FrameSelector lựa chọn."""
 
         # 5. Xử lý ảnh trước khi OCR
         ocr_image = self.image_processor.prepare_for_ocr(

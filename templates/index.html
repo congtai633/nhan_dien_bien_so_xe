@@ -11,94 +11,180 @@
 </head>
 
 <body>
-    <main class="container">
-        <header class="header">
-            <p class="subtitle">YOLOv8 & Google Cloud Vision</p>
-            <h1>Hệ thống nhận diện biển số xe</h1>
-            <p>
-                Tải ảnh phương tiện lên để phát hiện và đọc biển số xe.
-            </p>
-        </header>
-
-        <section class="camera-panel card">
-            <h2>Camera trực tiếp</h2>
-
-            <div class="camera-frame">
-                <video id="camera" autoplay playsinline muted hidden></video>
-
-                <p id="camera-placeholder">
-                    Camera chưa được mở.
-                </p>
-            </div>
-
-            <div class="camera-actions">
-                <button id="open-camera" type="button">
-                    Mở camera
-                </button>
-
-                <button id="capture-camera" type="button" disabled>
-                    Chụp ảnh
-                </button>
-
-                <button id="close-camera" class="secondary-button" type="button" disabled>
-                    Tắt camera
-                </button>
-            </div>
-
-            <p id="message" class="status"></p>
-            <canvas id="camera-canvas" hidden></canvas>
-        </section>
-
-        <section class="content">
-            <form id="scanForm" class="card">
-                <h2 id="preview-title">Chọn ảnh cần nhận diện</h2>
-
-                <label class="upload-area" for="imageInput">
-                    <input id="imageInput" name="image" type="file" accept="image/*" hidden>
-
-                    <div id="uploadPlaceholder">
-                        <div class="upload-icon">＋</div>
-                        <strong>Nhấn để chọn ảnh</strong>
-                        <span>Hỗ trợ JPG, JPEG và PNG</span>
-                    </div>
-
-                    <img id="previewImage" alt="Ảnh cần nhận diện" hidden>
-                </label>
-
-                <button id="scanButton" type="submit" disabled>
-                    Nhận diện biển số
-                </button>
-
-                <p id="statusMessage" class="status"></p>
-            </form>
-
-            <section class="card result-card">
-                <h2>Kết quả nhận diện</h2>
-
-                <div id="emptyResult" class="empty-result">
-                    Kết quả sẽ hiển thị tại đây sau khi xử lý ảnh.
+    <main class="app-shell">
+        <header class="page-header">
+            <div class="brand">
+                <div class="brand-mark" aria-hidden="true">
+                    <svg viewBox="0 0 24 24">
+                        <path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2"/>
+                        <rect x="7" y="8" width="10" height="8" rx="2"/>
+                        <path d="M9 11h6M9 13h4"/>
+                    </svg>
                 </div>
 
-                <div id="resultContent" hidden>
-                    <div class="plate-crop">
-                        <img id="cropImage" alt="Ảnh biển số được phát hiện" hidden>
+                <div>
+                    <h1>Nhận diện biển số xe</h1>
+                </div>
+            </div>
+            
+        </header>
+
+        <section class="recognition-layout">
+            <section class="panel camera-panel">
+                <div class="panel-heading">
+                    <div>
+                        <p class="panel-kicker">Nguồn hình ảnh</p>
+                        <h2>Camera trực tiếp</h2>
                     </div>
 
-                    <div class="result-row">
+                    <span
+                        id="camera-status-badge"
+                        class="status-badge status-badge--idle"
+                    >
+                        Chưa kết nối
+                    </span>
+                </div>
+
+                <div class="camera-frame">
+                    <video
+                        id="camera"
+                        autoplay
+                        playsinline
+                        muted
+                        hidden
+                    ></video>
+
+                    <div id="camera-placeholder" class="camera-placeholder">
+                        <div class="placeholder-icon" aria-hidden="true">
+                            <svg viewBox="0 0 24 24">
+                                <path d="M15 10l4.5-2.5v9L15 14"/>
+                                <rect x="3" y="6" width="12" height="12" rx="3"/>
+                                <path d="M7 3h4"/>
+                            </svg>
+                        </div>
+
+                        <strong>Camera chưa được mở</strong>
+                        <span>Nhấn “Mở camera” để bắt đầu nhận diện tự động.</span>
+                    </div>
+
+                    <div id="scan-indicator" class="scan-indicator" hidden>
+                        <span class="scan-spinner" aria-hidden="true"></span>
+                        <span>Đang quét</span>
+                    </div>
+                </div>
+
+                <div class="camera-footer">
+                    <p id="message" class="camera-message">
+                        Hệ thống đang chờ mở camera.
+                    </p>
+
+                    <div class="camera-actions">
+                        <button id="open-camera" type="button">
+                            <svg viewBox="0 0 24 24" aria-hidden="true">
+                                <path d="M15 10l4.5-2.5v9L15 14"/>
+                                <rect x="3" y="6" width="12" height="12" rx="3"/>
+                            </svg>
+                            Mở camera
+                        </button>
+
+                        <button
+                            id="restart-scan"
+                            class="secondary-button"
+                            type="button"
+                            hidden
+                        >
+                            <svg viewBox="0 0 24 24" aria-hidden="true">
+                                <path d="M20 7v5h-5"/>
+                                <path d="M18.5 16a8 8 0 1 1 .8-7.6L20 12"/>
+                            </svg>
+                            Quét lại
+                        </button>
+
+                        <button
+                            id="close-camera"
+                            class="ghost-button"
+                            type="button"
+                            disabled
+                        >
+                            <svg viewBox="0 0 24 24" aria-hidden="true">
+                                <path d="M6 6l12 12M18 6L6 18"/>
+                            </svg>
+                            Tắt camera
+                        </button>
+                    </div>
+                </div>
+
+                <canvas id="camera-canvas" hidden></canvas>
+            </section>
+
+            <section class="panel result-panel">
+                <div class="panel-heading">
+                    <div>
+                        <p class="panel-kicker">Phân tích hình ảnh</p>
+                        <h2>Kết quả nhận diện</h2>
+                    </div>
+
+                    <span
+                        id="result-status-badge"
+                        class="status-badge status-badge--idle"
+                    >
+                        Đang chờ
+                    </span>
+                </div>
+
+                <div id="emptyResult" class="empty-result">
+                    <div class="empty-result-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24">
+                            <rect x="3" y="6" width="18" height="12" rx="3"/>
+                            <path d="M7 10h10M7 14h6"/>
+                        </svg>
+                    </div>
+
+                    <strong>Chưa có kết quả</strong>
+                    <span>
+                        Kết quả sẽ xuất hiện sau khi camera chọn được khung hình
+                        biển số phù hợp.
+                    </span>
+                </div>
+
+                <div id="resultContent" class="result-content" hidden>
+                    <div class="crop-heading">
+                        <span>Khung hình được chọn</span>
+                        <span class="best-frame-label">Rõ nhất</span>
+                    </div>
+
+                    <div class="plate-crop">
+                        <img
+                            id="cropImage"
+                            alt="Ảnh biển số được phát hiện"
+                            hidden
+                        >
+                    </div>
+
+                    <div class="plate-result">
                         <span>Biển số nhận diện</span>
                         <strong id="plateText">--</strong>
                     </div>
 
-                    <div class="result-row">
-                        <span>Loại biển số</span>
-                        <strong id="plateType">--</strong>
-                    </div>
+                    <div class="result-metrics">
+                        <div class="metric-card">
+                            <span>Loại biển số</span>
+                            <strong id="plateType">--</strong>
+                        </div>
 
-                    <div class="result-row">
-                        <span>Độ tin cậy</span>
-                        <strong id="confidence">--</strong>
+                        <div class="metric-card">
+                            <span>Độ tin cậy</span>
+                            <strong id="confidence">--</strong>
+                        </div>
                     </div>
                 </div>
+
+                <p
+                    id="statusMessage"
+                    class="result-message"
+                    role="status"
+                    aria-live="polite"
+                ></p>
             </section>
         </section>
     </main>
