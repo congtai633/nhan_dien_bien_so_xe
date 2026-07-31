@@ -1,45 +1,150 @@
-# Hệ thống nhận diện biển số Việt Nam
+# Hệ thống nhận diện biển số xe Việt Nam
 
-Hệ thống sử dụng YOLO để phát hiện biển số từ camera, theo dõi biển số qua nhiều
-frame để chọn ảnh rõ và ổn định, sau đó gửi đúng một ảnh lên Google Cloud Vision
-để OCR. Kết quả được chuẩn hóa theo định dạng biển số Việt Nam và hiển thị trực
-tiếp trên màn hình.
+Prototype sử dụng **YOLOv8** để phát hiện biển số, **OpenCV** để crop và xử lý
+ảnh, **FrameSelector** để chọn khung hình rõ và ổn định, sau đó gọi
+**Google Cloud Vision OCR** đúng một lần để đọc ký tự.
 
-Phiên bản hiện tại không lưu ảnh, không sử dụng database và chưa điều khiển
-barrier.
+Phiên bản hiện tại tập trung vào bài toán nhận diện:
 
-## Luồng xử lý
+- Hỗ trợ hai nhãn của model: `BSD` (biển dài) và `BSV` (biển vuông hai dòng).
+- Web tự động thu thập nhiều frame từ camera, không chọn frame đầu tiên vừa đạt
+  confidence.
+- Giao diện web chỉ có camera trực tiếp; đã bỏ phần chọn ảnh và nút nhận diện
+  ảnh thủ công.
+- Camera nằm bên trái, ảnh crop và kết quả nằm bên phải trên màn hình desktop.
+- Không lưu ảnh, không có database, chưa phân biệt xe vào/ra và chưa điều khiển
+  barrier.
+
+## 1. Vì sao phải chọn nhiều frame?
+
+YOLO có thể phát hiện đúng vị trí biển số với confidence cao trong lúc xe vẫn
+đang di chuyển. Tuy nhiên, ảnh crop tại thời điểm đó có thể bị nhòe nên OCR đọc
+sai ký tự.
+
+Luồng web hiện tại giải quyết vấn đề này như sau:
 
 ```text
-Camera chờ
-→ nhấn C
-→ YOLO phát hiện BSV/BSD tại máy
-→ lọc detection có confidence >= DETECTION_THRESHOLD
-→ crop biển số
-→ FrameSelector kiểm tra vị trí qua nhiều frame và đo độ nét
-→ chọn ảnh đạt yêu cầu có sharpness cao nhất
-→ xử lý ảnh BSV/BSD
+Người dùng mở camera
+→ trình duyệt gửi tuần tự nhiều frame về Flask
+→ YOLO phát hiện biển số và crop ảnh
+→ FrameSelector kiểm tra cùng mục tiêu, độ ổn định và độ nét
+→ chọn crop tốt nhất
+→ tiền xử lý ảnh BSV/BSD
 → Google Vision OCR đúng một lần
-→ chuẩn hóa chuỗi
-→ hiển thị ảnh crop và biển số
+→ chuẩn hóa chuỗi và hiển thị kết quả
 ```
 
-Ví dụ Google Vision trả về:
+Nếu hết thời gian:
 
 ```text
-50L
-347.98
+Chưa từng thấy biển
+→ PLATE_NOT_FOUND
+
+Đã thấy biển nhưng ảnh chưa đủ nét/ổn định
+→ RETRY_REQUIRED
+→ hiển thị crop tốt nhất
+→ người dùng điều chỉnh xe hoặc camera rồi quét lại
 ```
 
-Hệ thống làm sạch và hiển thị:
+Nếu Google Vision không đọc được chữ hoặc chuỗi không đúng định dạng đang hỗ
+trợ, hệ thống cũng trả `RETRY_REQUIRED`. Lỗi credentials, network hoặc Google
+Vision API là `PROCESSING_ERROR`, không bị xem nhầm là biển mờ.
+
+## 2. Hai cách chạy
+
+### Giao diện web
+
+Chạy:
+
+```powershell
+python flask_app.py
+```
+
+Mở `http://127.0.0.1:5000`, cấp quyền camera và bấm **Mở camera**. Frontend tự
+gửi các frame tuần tự; không cần bấm chụp hoặc chọn ảnh.
+
+Camera web được mở bởi trình duyệt qua `getUserMedia()`. Vì vậy,
+`CAMERA_SOURCE`, `CAMERA_WIDTH` và `CAMERA_HEIGHT` trong `.env` không điều khiển
+camera của giao diện web.
+
+### Giao diện OpenCV trên máy tính
+
+Chạy:
+
+```powershell
+python main.py
+```
+
+Các phím điều khiển:
+
+- `C` — bắt đầu một lượt kiểm tra.
+- `R` — xóa kết quả và trở về trạng thái chờ.
+- `Q` — đóng chương trình.
+
+Ở luồng này, Python mở camera bằng `CameraService`, nên các biến
+`CAMERA_SOURCE`, `CAMERA_WIDTH` và `CAMERA_HEIGHT` có hiệu lực.
+
+## 3. Công nghệ sử dụng
+
+| Công nghệ | Vai trò |
+|---|---|
+| Python | Ngôn ngữ chính của backend và chương trình OpenCV |
+| Ultralytics YOLOv8 | Phát hiện vị trí và loại biển `BSD/BSV` |
+| OpenCV | Đọc/crop ảnh, đo độ nét, resize, CLAHE và mã hóa JPEG |
+| Google Cloud Vision | OCR ký tự trên ảnh biển số đã chọn |
+| Flask | Cung cấp giao diện web và REST API |
+| JavaScript | Mở camera trình duyệt, lấy frame và điều khiển phiên quét |
+| HTML/CSS | Giao diện camera trái, kết quả phải và responsive |
+
+## 4. Cấu trúc project
 
 ```text
-50L-347.98
+nhan_dien_bien_so_xe-main/
+├── app/
+│   ├── config.py
+│   ├── controller.py
+│   ├── domain.py
+│   ├── interfaces.py
+│   ├── ui.py
+│   └── services/
+│       ├── automatic_scan_service.py
+│       ├── camera_service.py
+│       ├── frame_selector.py
+│       ├── google_vision_ocr.py
+│       ├── image_processor.py
+│       ├── plate_detector.py
+│       ├── plate_formatter.py
+│       └── recognition_service.py
+├── models/
+│   └── best.pt
+├── static/
+│   ├── css/style.css
+│   └── js/app.js
+├── templates/
+│   └── index.html
+├── tests/
+├── .env.example
+├── flask_app.py
+├── main.py
+├── MODULES.md
+├── README.md
+└── requirements.txt
 ```
 
-## Cách chạy trên Windows
+Đọc `MODULES.md` để xem trách nhiệm, input/output và quan hệ giữa từng file.
 
-Yêu cầu Python 3.10–3.12 và webcam hoạt động.
+## 5. Cài đặt trên Windows
+
+Yêu cầu:
+
+- Python 3.10–3.12.
+- Model `models/best.pt`.
+- Webcam hoạt động.
+- Google Cloud project đã bật Cloud Vision API.
+- Service account có quyền sử dụng Vision API hoặc Application Default
+  Credentials đã được cấu hình.
+
+Tạo môi trường:
 
 ```powershell
 cd nhan_dien_bien_so_xe-main
@@ -50,97 +155,198 @@ pip install -r requirements.txt
 Copy-Item .env.example .env
 ```
 
-Mở `.env` và sửa đường dẫn khóa Google Cloud:
+Mở `.env` và sửa đường dẫn credentials:
 
 ```env
-GOOGLE_APPLICATION_CREDENTIALS=C:/duong-dan/toi/service-account.json
+GOOGLE_APPLICATION_CREDENTIALS=C:/google-credentials/vision-service-account.json
 ```
 
-File JSON là khóa service account có quyền gọi Cloud Vision API. Không đưa khóa
-này vào project, GitHub hoặc gửi cho người khác.
+Không đặt file JSON bí mật trong source, không commit lên GitHub và không gửi
+cho người khác.
 
-Chạy chương trình:
+Nếu máy đã cấu hình Application Default Credentials bằng Google Cloud CLI, có
+thể để trống `GOOGLE_APPLICATION_CREDENTIALS`.
 
-```powershell
-python main.py
-```
+## 6. Cấu hình `.env`
 
-## Phím điều khiển
-
-- `C` — **Check**: bắt đầu một lượt kiểm tra biển số.
-- `R` — **Reload**: xóa kết quả và trở về trạng thái chờ.
-- `Q` — **Quit**: đóng chương trình.
-
-Sau khi nhấn `R`, camera và model vẫn được giữ trong bộ nhớ nhưng chương trình
-không tự quét. Nhấn `C` để kiểm tra xe tiếp theo.
-
-Khi request OCR đang được xử lý, `R` tạm thời không có hiệu lực nhằm tránh tạo
-request thứ hai. Chờ kết quả xuất hiện rồi nhấn `R`.
-
-## Kết quả hiển thị
-
-Hệ thống mở hai cửa sổ:
-
-- Cửa sổ camera: hình trực tiếp, bounding box, confidence, trạng thái và tiến độ
-  ổn định, ví dụ `3/5`.
-- Cửa sổ kết quả: ảnh biển số được chọn và chuỗi OCR đã chuẩn hóa.
-
-Khi nhấn `R` hoặc thoát chương trình, kết quả trên màn hình được xóa.
-
-## Cấu hình trong `.env`
-
-| Biến | Mặc định | Khoảng hợp lệ trong code | Tác dụng |
+| Biến | Mặc định | Điều kiện | Tác dụng |
 |---|---:|---:|---|
-| `CAMERA_SOURCE` | `0` | Chỉ số camera hoặc URL | Chọn webcam, camera khác hoặc RTSP |
-| `DETECTION_PREVIEW_THRESHOLD` | `0.25` | `(0, DETECTION_THRESHOLD]` | Ngưỡng YOLO trả box để hiển thị |
-| `DETECTION_THRESHOLD` | `0.80` | `(0, 1]` | Ngưỡng confidence tối thiểu để xét chọn ảnh |
-| `SCAN_TIMEOUT_SECONDS` | `15` | `> 0` | Thời gian tối đa của một lượt nhấn `C` |
-| `CROP_PADDING_RATIO` | `0.08` | `[0, 0.5]` | Chừa viền quanh bounding box |
-| `SQUARE_PLATE_LABELS` | `BSV` | Danh sách nhãn | Nhãn biển hai dòng cần ghép ngang |
-| `STABLE_FRAME_COUNT` | `5` | Số nguyên `> 0` | Số frame cùng mục tiêu cần theo dõi |
-| `CANDIDATE_WINDOW_SECONDS` | `1.5` | `> 0` | Thời gian tối đa để gom đủ frame ổn định |
-| `MIN_SHARPNESS_SCORE` | `100` | `>= 0` | Điểm nét Laplacian tối thiểu để lưu ứng viên |
-| `MAX_CENTER_SHIFT_RATIO` | `0.03` | `[0, 1]` | Độ lệch tâm tối đa so với frame bắt đầu |
+| `MODEL_PATH` | `models/best.pt` | File phải tồn tại | Đường dẫn weight YOLO |
+| `GOOGLE_APPLICATION_CREDENTIALS` | Trống | File phải tồn tại nếu khai báo | Khóa service account Google Cloud |
+| `CAMERA_SOURCE` | `0` | Chỉ số hoặc URL | Nguồn camera của `main.py` |
+| `CAMERA_WIDTH` | `1280` | Số nguyên | Chiều rộng camera của `main.py` |
+| `CAMERA_HEIGHT` | `720` | Số nguyên | Chiều cao camera của `main.py` |
+| `DETECTION_PREVIEW_THRESHOLD` | `0.25` | `(0, DETECTION_THRESHOLD]` | Ngưỡng YOLO trả detection để hiển thị/xét tiếp |
+| `DETECTION_THRESHOLD` | `0.80` | `(0, 1]` | Confidence tối thiểu để crop và đưa vào selector |
+| `SCAN_TIMEOUT_SECONDS` | `15` | `> 0` | Thời gian tối đa của một lượt quét |
+| `CROP_PADDING_RATIO` | `0.08` | `[0, 0.5]` | Phần viền chừa quanh bounding box |
+| `SQUARE_PLATE_LABELS` | `BSV` | Danh sách cách nhau bằng dấu phẩy | Nhãn biển hai dòng cần ghép ngang |
+| `STABLE_FRAME_COUNT` | `5` | Số nguyên `> 0` | Số detection cùng mục tiêu trước khi chọn ảnh |
+| `CANDIDATE_WINDOW_SECONDS` | `1.5` | `> 0` | Cửa sổ theo dõi của luồng `main.py` |
+| `MIN_SHARPNESS_SCORE` | `100` | `>= 0` | Ngưỡng độ nét Variance of Laplacian |
+| `MAX_CENTER_SHIFT_RATIO` | `0.03` | `[0, 1]` | Độ lệch tâm tối đa so với đường chéo frame |
 
-Các giá trị nên dùng thử trong thực tế:
+Lưu ý:
 
-| Biến | Khoảng nên thử |
-|---|---:|
-| `DETECTION_THRESHOLD` | `0.60–0.95` |
-| `STABLE_FRAME_COUNT` | `3–10` frame |
-| `CANDIDATE_WINDOW_SECONDS` | `0.5–3.0` giây |
-| `MIN_SHARPNESS_SCORE` | `50–300` |
-| `MAX_CENTER_SHIFT_RATIO` | `0.01–0.05` |
+- `MIN_SHARPNESS_SCORE` không phải phần trăm. Giá trị phù hợp phụ thuộc camera,
+  ánh sáng và kích thước crop; nên thử trong khoảng `50–300`.
+- `FrameSelector` chọn ảnh có sharpness cao nhất. Confidence chỉ được dùng để
+  phân thắng thua khi hai ảnh có cùng sharpness; code hiện không dùng công thức
+  trọng số `confidence × 0.6 + sharpness × 0.4`.
+- Ở web, `AutomaticScanService` dùng `SCAN_TIMEOUT_SECONDS` làm cửa sổ của
+  selector để tránh reset chỉ vì mỗi frame phải chờ request mạng. Biến
+  `CANDIDATE_WINDOW_SECONDS` đang áp dụng trực tiếp cho luồng `main.py`.
 
-`MIN_SHARPNESS_SCORE` không phải phần trăm. Giá trị này phụ thuộc camera, ánh
-sáng và kích thước ảnh crop, nên cần quan sát log thực tế trước khi điều chỉnh.
+## 7. Cách xử lý BSV và BSD
 
-Nếu bộ đếm thường quay lại `1/5`, mục tiêu có thể đang di chuyển quá giới hạn,
-YOLO bị mất detection hoặc `CANDIDATE_WINDOW_SECONDS` quá ngắn so với tốc độ xử
-lý của máy.
+### BSD — biển dài một dòng
 
-## Chạy test
+Ảnh crop giữ nguyên bố cục, được phóng lớn nếu chiều cao nhỏ hơn 120 pixel và
+tăng tương phản cục bộ bằng CLAHE trước khi OCR.
 
-Test không bắt buộc để mở camera và chạy `main.py`, nhưng nên được giữ để kiểm
-tra nhanh sau mỗi lần sửa controller, formatter hoặc service:
+### BSV — biển vuông hai dòng
+
+```text
+Crop BSV
+→ chia nửa trên và nửa dưới
+→ resize hai phần về cùng chiều cao
+→ chèn khoảng trắng
+→ ghép ngang
+→ phóng lớn và tăng tương phản
+→ OCR
+```
+
+Ảnh hiển thị trên giao diện là crop gốc. Ảnh gửi Google Vision là bản đã qua
+`prepare_for_ocr()`.
+
+Ví dụ OCR trả:
+
+```text
+50L
+347.98
+```
+
+Formatter làm sạch và hiển thị:
+
+```text
+50L-347.98
+```
+
+## 8. REST API
+
+| Method | Endpoint | Mục đích |
+|---|---|---|
+| `GET` | `/` | Trả giao diện web |
+| `GET` | `/api/v1/health` | Kiểm tra Flask đang hoạt động |
+| `POST` | `/api/v1/scan` | Nhận diện một ảnh tĩnh từ form-data `image` |
+| `POST` | `/api/v1/auto-scan/start` | Tạo phiên quét và trả `session_id` |
+| `POST` | `/api/v1/auto-scan/frame` | Nhận `session_id` và một frame camera |
+| `POST` | `/api/v1/auto-scan/cancel` | Hủy dữ liệu tạm của phiên |
+
+Giao diện hiện tại không dùng `/api/v1/scan`; endpoint này được giữ lại để test
+API ảnh tĩnh và tương thích với luồng cũ. Ba endpoint `/auto-scan/*` mới là luồng
+được `static/js/app.js` sử dụng.
+
+Các trạng thái chính của camera web:
+
+| Status | HTTP thường gặp | Ý nghĩa |
+|---|---:|---|
+| `SEARCHING` | `202` | Chưa có detection đạt ngưỡng |
+| `COLLECTING` | `202` | Đã thấy biển, đang gom frame và đánh giá độ nét |
+| `SUCCESS` | `200` | OCR hợp lệ |
+| `RETRY_REQUIRED` | `200` | Ảnh mờ, OCR rỗng hoặc sai định dạng |
+| `PLATE_NOT_FOUND` | `422` | Hết thời gian nhưng chưa thấy biển |
+| `SESSION_ENDED` | `409` | `session_id` không còn tồn tại |
+| `PROCESSING_ERROR` | `500` | Lỗi model, xử lý ảnh, credentials hoặc OCR API |
+
+Các `reason` khi cần quét lại:
+
+- `LOW_IMAGE_QUALITY`: đã thấy biển nhưng chưa có crop đủ nét/ổn định.
+- `OCR_NO_TEXT`: Google Vision không đọc được ký tự.
+- `OCR_INVALID_FORMAT`: OCR có chữ nhưng formatter chưa nhận dạng được mẫu.
+
+## 9. Hoạt động của frontend
+
+`static/js/app.js` thực hiện:
+
+1. Mở camera bằng `navigator.mediaDevices.getUserMedia()`.
+2. Gọi `/api/v1/auto-scan/start`.
+3. Chụp frame JPEG chất lượng `0.92`.
+4. Gửi frame tiếp theo sau khi request hiện tại hoàn tất, với độ trễ tối thiểu
+   `250 ms`, để tránh các lượt YOLO chạy chồng lên nhau.
+5. Cập nhật trạng thái `SEARCHING` hoặc tiến độ `COLLECTING`.
+6. Dừng vòng quét khi nhận `SUCCESS`, `RETRY_REQUIRED`,
+   `PLATE_NOT_FOUND` hoặc lỗi.
+7. Gọi `/api/v1/auto-scan/cancel` khi tắt camera hoặc bắt đầu lượt quét mới.
+
+Giao diện responsive:
+
+- Desktop: camera bên trái, kết quả bên phải.
+- Màn hình nhỏ: hai khu vực tự chuyển thành một cột.
+
+## 10. Chạy test
 
 ```powershell
 python -m unittest discover -s tests -v
 ```
 
-Các unit test hiện có không cần webcam thật và không gọi Google Vision thật.
+Hiện có **18 unit test**:
 
-## Giới hạn hiện tại
+- 5 test điều khiển `C/R/Q`.
+- 5 test định dạng biển số.
+- 2 test `PlateRecognitionService`.
+- 1 test `FrameSelector`.
+- 5 test `AutomaticScanService`.
 
-- Mỗi frame chỉ theo dõi detection có confidence cao nhất đạt ngưỡng.
-- `FrameSelector` nhận diện cùng mục tiêu bằng nhãn và độ lệch tâm so với frame
-  bắt đầu; chưa sử dụng tracker ID hoặc IoU.
-- Nếu một frame không có detection đạt ngưỡng, quá trình gom frame ổn định được
-  đặt lại.
-- Chưa có danh sách xe được phép/từ chối, database và điều khiển barrier.
-- Formatter mới hỗ trợ một số dạng biển thông dụng; biển ngoại giao, quân đội
-  hoặc định dạng đặc biệt có thể chưa được nhận ra.
-- Nếu camera nghiêng nhiều, nên bổ sung chỉnh phối cảnh trước OCR.
+Test xác nhận các ranh giới quan trọng:
 
-Đọc `MODULES.md` để hiểu trách nhiệm của từng file và vị trí cần sửa khi mở rộng
-hệ thống.
+- Không chọn frame confidence cao đầu tiên.
+- OCR chỉ được gọi một lần sau khi đủ frame ổn định.
+- Ảnh mờ hết thời gian không gọi OCR.
+- OCR rỗng yêu cầu quét lại.
+- Không phát hiện biển trả `PLATE_NOT_FOUND`.
+- Lỗi Google Vision không bị gắn nhầm thành `LOW_IMAGE_QUALITY`.
+
+Các test sử dụng fake object, không cần webcam thật và không gọi Google Vision
+thật. Test không bắt buộc để chạy ứng dụng, nhưng nên giữ lại để phát hiện lỗi
+cũ quay lại sau khi sửa code.
+
+## 11. Giới hạn hiện tại
+
+- Mỗi frame chỉ chọn detection có confidence cao nhất đạt ngưỡng.
+- `FrameSelector` so sánh nhãn và độ lệch tâm với detection neo; chưa có
+  ByteTrack, tracker ID hoặc IoU để theo dõi nhiều xe.
+- Luồng desktop reset selector khi một frame không có detection đạt ngưỡng;
+  luồng web giữ trạng thái phiên cho đến frame phù hợp tiếp theo hoặc hết thời
+  gian.
+- Formatter mới hỗ trợ các mẫu biển thông dụng; biển ngoại giao, quân đội hoặc
+  định dạng đặc biệt có thể trả `OCR_INVALID_FORMAT`.
+- Chưa chỉnh phối cảnh khi camera đặt quá nghiêng.
+- Chưa khóa phiên bản package trong `requirements.txt`.
+- Flask đang chạy development server tại `127.0.0.1:5000`, chưa phải cấu hình
+  triển khai production.
+- Chưa có database, lưu lịch sử, xác định xe vào/ra, tài khoản người dùng hoặc
+  điều khiển barrier.
+
+## 12. Lỗi thường gặp
+
+### Không tìm thấy model
+
+Kiểm tra `MODEL_PATH` và file `models/best.pt`.
+
+### Trình duyệt không mở camera
+
+Kiểm tra quyền camera của trình duyệt, đóng ứng dụng khác đang chiếm webcam và
+mở đúng `http://127.0.0.1:5000`.
+
+### Google Vision báo lỗi credentials
+
+Kiểm tra đường dẫn `GOOGLE_APPLICATION_CREDENTIALS`, quyền service account và
+Cloud Vision API đã được bật.
+
+### Bộ đếm ổn định thường quay lại từ đầu
+
+Giữ xe đứng yên, đưa biển số vào vùng đủ sáng, giảm
+`STABLE_FRAME_COUNT`, tăng `MAX_CENTER_SHIFT_RATIO` hoặc tăng
+`CANDIDATE_WINDOW_SECONDS` cho luồng desktop. Chỉ điều chỉnh từng biến sau khi
+quan sát kết quả thực tế.

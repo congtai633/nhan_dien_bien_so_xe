@@ -1,16 +1,34 @@
 # Kiến trúc và trách nhiệm các module
 
-## Kiến trúc tổng thể
+Tài liệu này mô tả source hiện tại của hệ thống nhận diện biển số xe Việt Nam.
+Project có hai điểm khởi động:
+
+- `main.py`: chương trình desktop dùng OpenCV và phím `C/R/Q`.
+- `flask_app.py`: ứng dụng web dùng camera của trình duyệt và tự động gửi nhiều
+  frame.
+
+Cả hai cùng tái sử dụng detector YOLO, bộ xử lý ảnh, Google Vision OCR,
+formatter và `FrameSelector`.
+
+## 1. Nguyên tắc kiến trúc
+
+Source được chia theo ba nhóm chính:
+
+1. **Domain**: trạng thái và kiểu dữ liệu dùng chung, không phụ thuộc thư viện
+   bên ngoài.
+2. **Services**: mỗi service giải quyết một trách nhiệm như camera, YOLO, chọn
+   frame, xử lý ảnh hoặc OCR.
+3. **Entry point/điều phối**: `main.py`, `controller.py` và `flask_app.py` kết
+   nối các service thành luồng hoàn chỉnh.
 
 Hệ thống sử dụng **composition** và **dependency injection**:
 
-1. `main.py` tạo các object.
-2. Các object được truyền vào `LicensePlateController`.
-3. Controller chỉ điều phối, không tự khởi tạo YOLO, camera hoặc OCR.
-4. Mỗi service xử lý một trách nhiệm riêng.
+- `main.py` và `flask_app.py` là nơi tạo object thật.
+- Controller/service nhận dependency qua constructor.
+- Logic điều phối không tự khởi tạo YOLO hoặc Google Vision.
+- Fake object có thể được truyền vào unit test mà không cần camera hay API thật.
 
-Nhờ cách tổ chức này, có thể thay camera, model hoặc OCR mà không phải viết lại
-toàn bộ hệ thống.
+## 2. Kiến trúc desktop
 
 ```text
 main.py
@@ -24,88 +42,149 @@ main.py
    └─ OpenCVDisplay
 ```
 
-## Trách nhiệm từng file
+`main.py` chỉ cấu hình và truyền dependency. `LicensePlateController` sở hữu
+state machine `C/R/Q`, nhưng không biết chi tiết YOLO được nạp thế nào hoặc
+Google Vision tạo client ra sao.
+
+## 3. Kiến trúc web
+
+```text
+index.html + style.css
+→ app.js mở camera trình duyệt
+→ Flask REST API
+→ AutomaticScanService
+   ├─ một FrameSelector cho mỗi session_id
+   └─ PlateRecognitionService
+      ├─ YOLOPlateDetector
+      ├─ PlateImageProcessor
+      ├─ GoogleVisionOCR
+      └─ VietnamesePlateFormatter
+```
+
+Camera web do trình duyệt mở bằng `getUserMedia()`. Backend Flask không dùng
+`CameraService` và không đọc `CAMERA_SOURCE` cho luồng này.
+
+## 4. Trách nhiệm từng file
+
+### File gốc và backend
 
 | File | Trách nhiệm | Khi nào cần sửa? |
 |---|---|---|
-| `main.py` | Khởi tạo và truyền các dependency vào controller | Khi thêm hoặc thay service |
-| `app/config.py` | Đọc `.env`, chuyển kiểu và kiểm tra cấu hình | Khi thêm tham số cấu hình |
-| `app/domain.py` | Chứa state và các dataclass dùng chung | Khi cấu trúc dữ liệu nghiệp vụ đổi |
-| `app/interfaces.py` | Khai báo hợp đồng `OCRProvider` | Khi hợp đồng chung của OCR thay đổi |
-| `app/controller.py` | Điều phối C/R/Q, state, quét, chọn frame, OCR và kết quả | Khi luồng nghiệp vụ thay đổi |
-| `app/services/camera_service.py` | Mở, đọc và đóng camera | Khi đổi webcam sang RTSP hoặc thêm reconnect |
-| `app/services/plate_detector.py` | Chạy YOLO và chuyển output thành `PlateDetection` | Khi đổi model hoặc cách lọc detection |
-| `app/services/frame_selector.py` | Theo dõi nhiều frame, đo độ nét và chọn crop tốt nhất | Khi đổi quy tắc ổn định/chọn ảnh |
-| `app/services/image_processor.py` | Crop có padding, ghép BSV và tăng tương phản | Khi thêm deskew hoặc perspective correction |
-| `app/services/google_vision_ocr.py` | Gọi Google Vision `TEXT_DETECTION` | Khi đổi API, timeout hoặc retry |
-| `app/services/plate_formatter.py` | Làm sạch và định dạng chuỗi biển số | Khi thêm loại biển hoặc sửa quy tắc ký tự |
-| `app/ui.py` | Vẽ box, trạng thái, kết quả và đọc phím | Khi thay OpenCV bằng web/GUI |
-| `tests/test_controller_controls.py` | Kiểm tra hành vi C/R/Q của controller | Khi state hoặc constructor controller đổi |
-| `tests/test_plate_formatter.py` | Kiểm tra các trường hợp định dạng biển số | Khi quy tắc formatter thay đổi |
+| `main.py` | Khởi tạo pipeline desktop và chạy controller | Khi thêm/thay dependency của desktop |
+| `flask_app.py` | Tạo Flask app, khởi tạo pipeline web, khai báo API và chuyển kết quả thành JSON | Khi đổi endpoint hoặc contract frontend/backend |
+| `app/config.py` | Đọc `.env`, chuyển kiểu, đổi đường dẫn và validate cấu hình | Khi thêm tham số cấu hình |
+| `app/domain.py` | Chứa enum và dataclass dùng chung | Khi trạng thái hoặc dữ liệu nghiệp vụ thay đổi |
+| `app/interfaces.py` | Khai báo hợp đồng `OCRProvider` | Khi thay đổi interface chung của OCR |
+| `app/controller.py` | Điều phối state `C/R/Q`, chọn frame, chạy OCR bất đồng bộ và cập nhật kết quả | Khi đổi luồng desktop |
+| `app/ui.py` | Vẽ camera, bounding box, trạng thái, ảnh crop và đọc bàn phím | Khi đổi giao diện OpenCV |
 
-## Dữ liệu truyền qua các tầng
+### Services
+
+| File | Trách nhiệm | Không chịu trách nhiệm |
+|---|---|---|
+| `camera_service.py` | Mở, đọc và đóng webcam/RTSP cho `main.py` | Không dùng trong camera web |
+| `plate_detector.py` | Chạy YOLO và đổi output thành `PlateDetection` | Không crop, không OCR |
+| `frame_selector.py` | Theo dõi nhiều detection, đo sharpness và chọn crop tốt nhất | Không gọi YOLO hoặc OCR |
+| `image_processor.py` | Crop có padding, xử lý BSV hai dòng, resize và CLAHE | Không đọc ký tự |
+| `google_vision_ocr.py` | Mã hóa JPEG và gọi Google Vision `TEXT_DETECTION` | Không định dạng biển số |
+| `plate_formatter.py` | Làm sạch, sửa ký tự dễ nhầm theo vị trí, thêm dấu và kiểm tra Regex | Không gọi Google Vision |
+| `recognition_service.py` | Cung cấp ranh giới `detect_candidate()` và `recognize_candidate()` | Không giữ phiên nhiều frame |
+| `automatic_scan_service.py` | Giữ session web, đưa frame qua selector, quyết định lúc OCR và đóng phiên | Không lưu database hoặc ảnh |
+
+### Frontend
+
+| File | Trách nhiệm |
+|---|---|
+| `templates/index.html` | Khung giao diện camera trái, kết quả phải, nút mở/tắt/quét lại |
+| `static/css/style.css` | Bố cục, màu trạng thái, animation quét và responsive |
+| `static/js/app.js` | Mở camera, tạo session, gửi frame tuần tự, cập nhật trạng thái và hủy session |
+
+Giao diện hiện tại không còn input chọn file, preview ảnh upload hoặc nút nhận
+diện ảnh thủ công. API ảnh tĩnh `/api/v1/scan` vẫn tồn tại để kiểm thử và tương
+thích, nhưng `app.js` không gọi endpoint này.
+
+### Test
+
+| File | Số test | Nội dung |
+|---|---:|---|
+| `tests/test_controller_controls.py` | 5 | Phím `C/R/Q`, reset và khóa reload khi OCR đang chạy |
+| `tests/test_plate_formatter.py` | 5 | Định dạng biển xe, biển hai dòng và ký tự dễ nhầm |
+| `tests/test_recognition_service.py` | 2 | Nhận diện ảnh tĩnh thành công và không có detection |
+| `tests/test_frame_selector.py` | 1 | Không chọn frame confidence cao đầu tiên |
+| `tests/test_automatic_scan_service.py` | 5 | OCR một lần, retry, timeout, không có biển và lỗi API |
+| `tests/_cv2_compat.py` | — | Cung cấp OpenCV giả cho môi trường unit test nhẹ |
+
+Tổng cộng hiện có **18 unit test**.
+
+## 5. Các kiểu dữ liệu trong `app/domain.py`
+
+| Kiểu | Ý nghĩa |
+|---|---|
+| `AppState` | State của chương trình desktop |
+| `AutoScanStatus` | Status của phiên camera web |
+| `BoundingBox` | Tọa độ `x1, y1, x2, y2` |
+| `PlateDetection` | Bounding box, nhãn `BSD/BSV` và confidence |
+| `FrameCandidate` | Crop, detection và sharpness |
+| `FormattedPlate` | Chuỗi thô, chuỗi làm sạch, chuỗi hiển thị và cờ hợp lệ |
+| `ProcessingResult` | Kết quả worker OCR trả về controller desktop |
+| `RecognitionResult` | Kết quả nhận diện một ảnh/crop |
+| `AutoScanResult` | Kết quả sau mỗi frame của phiên web |
+
+`domain.py` dùng `object` cho ảnh để không buộc tầng domain phải import
+`numpy` hoặc OpenCV.
+
+## 6. Dữ liệu truyền qua pipeline
 
 | Bước | Input | Output |
 |---|---|---|
-| Camera | `cv2.VideoCapture` | Frame BGR dạng `numpy.ndarray` |
-| Detector | Frame | `list[PlateDetection]` |
-| Crop | Frame + `BoundingBox` | Ảnh biển số |
-| Frame selector | Crop + detection + kích thước frame | `None` hoặc `FrameCandidate` tốt nhất |
-| Image processor | Crop + loại `BSV/BSD` | Ảnh đã chuẩn bị cho OCR |
+| Camera | Webcam/RTSP hoặc `getUserMedia()` | Frame hình ảnh |
+| Decode web | JPEG multipart | Ảnh BGR `numpy.ndarray` |
+| Detector | Frame BGR | `list[PlateDetection]` |
+| Crop | Frame + `BoundingBox` | Ảnh biển số gốc |
+| Frame selector | Crop + detection + kích thước frame | `None` hoặc `FrameCandidate` |
+| Image processor | Crop + loại `BSD/BSV` | Ảnh đã chuẩn bị cho OCR |
 | OCR | Ảnh xử lý | Chuỗi thô |
 | Formatter | Chuỗi thô | `FormattedPlate` |
-| Controller | Kết quả xử lý | State, thông báo, ảnh và chuỗi hiển thị |
+| Flask/UI | Kết quả | JSON hoặc hình ảnh/trạng thái hiển thị |
 
-Các kiểu dữ liệu chính trong `app/domain.py`:
+## 7. `PlateRecognitionService`
 
-- `AppState`: trạng thái hiện tại của chương trình.
-- `BoundingBox`: tọa độ biển số.
-- `PlateDetection`: box, nhãn `BSV/BSD` và confidence.
-- `FrameCandidate`: crop, detection và điểm sharpness.
-- `FormattedPlate`: chuỗi thô, chuỗi làm sạch, chuỗi hiển thị và tính hợp lệ.
-- `ProcessingResult`: kết quả được thread OCR trả về controller.
-
-## State machine
+Trước khi có camera tự động, một hàm có thể chạy toàn bộ:
 
 ```text
-IDLE
-  └─ nhấn C → SCANNING
-       ├─ hết SCAN_TIMEOUT_SECONDS → ERROR
-       └─ FrameSelector chọn được ảnh → PROCESSING
-              ├─ OCR hợp lệ → RESULT
-              ├─ OCR có chữ nhưng sai định dạng → RESULT
-              ├─ OCR không thấy chữ → ERROR
-              └─ OCR/API lỗi → ERROR
-
-SCANNING, RESULT hoặc ERROR ─ nhấn R → IDLE
-PROCESSING ─ R bị khóa cho đến khi OCR hoàn tất
-Mọi trạng thái ─ nhấn Q → đóng chương trình
+YOLO → crop → tiền xử lý → OCR → format
 ```
 
-Controller đổi sang `PROCESSING` trước khi đưa công việc vào
-`ThreadPoolExecutor`. Từ frame tiếp theo, `_scan_frame()` không chạy nữa nên một
-lượt kiểm tra không gửi OCR lần hai.
+Source hiện tách thành ba hàm:
 
-`R` chỉ reset dữ liệu của phiên kiểm tra. Nó không load lại model YOLO và không
-mở lại camera.
+### `recognize(image)`
 
-## Luồng quét và chọn frame
+Luồng tiện ích dành cho một ảnh tĩnh. Hàm gọi `detect_candidate()` rồi
+`recognize_candidate()`.
 
-Khi state là `SCANNING`, controller thực hiện:
+### `detect_candidate(image)`
 
-1. Gọi `YOLOPlateDetector.detect(frame)`.
-2. Danh sách detection đã được sắp xếp theo confidence giảm dần.
+Chỉ thực hiện:
+
+1. Kiểm tra ảnh hợp lệ.
+2. Chạy detector.
 3. Lấy detection đầu tiên đạt `DETECTION_THRESHOLD`.
-4. Crop biển số có padding.
-5. Gửi crop và detection vào `FrameSelector.observe()`.
-6. Hiển thị `stable_count` và điểm sharpness hiện tại.
-7. Nếu selector trả về `None`, tiếp tục đọc frame mới.
-8. Nếu selector trả về `FrameCandidate`, gửi đúng ảnh đó sang bước OCR.
+4. Crop ảnh.
+5. Trả `(crop, detection)`.
 
-Nếu frame hiện tại không có detection đạt ngưỡng, controller gọi
-`FrameSelector.reset()`.
+Hàm này **không gọi OCR**, nên `AutomaticScanService` có thể kiểm tra nhiều
+frame mà không phát sinh một request Google Vision cho mỗi frame.
 
-## Cách `FrameSelector` hoạt động
+### `recognize_candidate(crop, detection)`
+
+Chỉ được gọi sau khi đã có crop cần OCR:
+
+1. `PlateImageProcessor.prepare_for_ocr()`.
+2. `OCRProvider.recognize()`.
+3. `VietnamesePlateFormatter.format()`.
+4. Trả `SUCCESS`, `NO_TEXT` hoặc `INVALID_FORMAT`.
+
+## 8. `FrameSelector`
 
 `FrameSelector` là bộ chọn frame theo quy tắc, chưa phải tracker nhiều đối tượng
 như ByteTrack.
@@ -114,90 +193,170 @@ như ByteTrack.
 
 Hai detection được xem là cùng mục tiêu khi:
 
-- Có cùng nhãn `BSV` hoặc `BSD`.
-- Độ lệch tâm không vượt `MAX_CENTER_SHIFT_RATIO` nhân với đường chéo frame.
+- Cùng nhãn `BSD` hoặc `BSV`.
+- Khoảng cách giữa hai tâm không vượt
+  `MAX_CENTER_SHIFT_RATIO × đường chéo frame`.
 
-Vị trí hiện tại được so với detection đầu tiên của cửa sổ theo dõi
-`_anchor_detection`, không phải detection của frame ngay trước đó.
+Detection hiện tại được so với detection neo đầu tiên
+`_anchor_detection`, không phải frame ngay trước đó.
 
-### Thu thập và chọn ảnh
+### Đo độ nét
 
-1. Detection đầu tiên bắt đầu cửa sổ thời gian và có `stable_count = 1`.
-2. Mỗi detection cùng mục tiêu làm bộ đếm tăng thêm một.
-3. Sharpness được tính bằng Variance of Laplacian.
-4. Chỉ crop đạt `MIN_SHARPNESS_SCORE` mới được lưu vào danh sách ứng viên.
-5. Khi đủ `STABLE_FRAME_COUNT`, selector chọn ảnh có sharpness cao nhất.
-6. Nếu hai ảnh có cùng sharpness, ảnh có confidence cao hơn được ưu tiên.
-7. Sau khi chọn, selector tự reset để xóa dữ liệu tạm.
+Độ nét được tính bằng **Variance of Laplacian**:
 
-Quá trình bắt đầu lại từ `1` nếu:
+```python
+cv2.Laplacian(gray, cv2.CV_64F).var()
+```
 
-- Quá `CANDIDATE_WINDOW_SECONDS`.
-- Nhãn detection thay đổi.
-- Tâm detection lệch quá giới hạn.
-- Controller không thấy detection nào đạt confidence.
-- Người dùng bắt đầu lượt kiểm tra mới bằng phím `C`.
+Giá trị lớn thường cho biết ảnh có nhiều cạnh rõ hơn. Đây không phải phần trăm
+và phụ thuộc camera, ánh sáng, kích thước crop.
 
-Lưu ý: code hiện tại chỉ cần có ít nhất một ứng viên đủ nét trong số các frame
-ổn định, không yêu cầu tất cả frame đều đạt ngưỡng sharpness.
+### Quy tắc chọn
 
-## Luồng xử lý biển BSV và BSD
+1. Detection đầu tiên tạo track mới và `stable_count = 1`.
+2. Detection cùng mục tiêu làm bộ đếm tăng.
+3. Chỉ crop đạt `MIN_SHARPNESS_SCORE` mới vào danh sách ứng viên đủ nét.
+4. Khi đủ `STABLE_FRAME_COUNT`, chọn ứng viên có sharpness cao nhất.
+5. Nếu sharpness bằng nhau, chọn ảnh có confidence cao hơn.
+6. Selector reset sau khi trả ứng viên.
+
+Code hiện không dùng công thức trọng số confidence/sharpness. Sharpness là tiêu
+chí chính; confidence chỉ là tie-breaker.
+
+Track bắt đầu lại khi:
+
+- Hết `candidate_window_seconds`.
+- Nhãn biển thay đổi.
+- Tâm biển lệch quá giới hạn.
+- Luồng desktop không có detection đạt ngưỡng.
+- Người dùng bắt đầu lượt quét desktop mới.
+
+Trong luồng web, `AutomaticScanService` tạo selector với cửa sổ bằng
+`SCAN_TIMEOUT_SECONDS` và không reset chỉ vì một request frame không có
+detection. Session kết thúc khi thành công, retry, không tìm thấy biển, bị hủy
+hoặc phát sinh lỗi.
+
+## 9. `AutomaticScanService`
+
+### Vì sao cần `session_id`?
+
+HTTP không tự nhớ frame nào thuộc cùng một lượt quét. `start_session()` sinh
+`session_id` bằng UUID và tạo `_ScanSession` riêng, nhờ đó:
+
+- Frame của hai trình duyệt không bị trộn.
+- Quét lại không dùng dữ liệu của lượt cũ.
+- Mỗi session có một `FrameSelector`, thời gian bắt đầu và ứng viên tốt nhất.
+
+### Luồng `observe()`
+
+```text
+Nhận session_id + frame
+→ detect_candidate()
+   ├─ chưa thấy biển và chưa timeout → SEARCHING
+   ├─ chưa thấy biển và timeout → PLATE_NOT_FOUND
+   └─ thấy biển
+      → FrameSelector.observe()
+         ├─ chưa chọn xong → COLLECTING
+         ├─ đủ ổn định + có ảnh nét → OCR một lần
+         │  ├─ hợp lệ → SUCCESS
+         │  └─ rỗng/sai định dạng → RETRY_REQUIRED
+         └─ timeout trước khi đủ điều kiện
+            → RETRY_REQUIRED + crop tốt nhất
+```
+
+`best_candidate` lưu crop tốt nhất đã nhìn thấy, kể cả chưa đạt ngưỡng nét, để
+giao diện có ảnh minh họa khi trả `LOW_IMAGE_QUALITY`. Dữ liệu chỉ nằm trong bộ
+nhớ và bị xóa khi session kết thúc.
+
+### Bảo đảm OCR không bị gọi lặp
+
+- Frontend gửi request tuần tự.
+- Mỗi `_ScanSession` có `Lock` để chống hai request cùng session chạy đồng thời.
+- `_finish_with_ocr()` là điểm duy nhất trong luồng web gọi
+  `recognize_candidate()`.
+- Session được đánh dấu `finished` và xóa ngay sau OCR.
+- Request dùng lại session cũ nhận `SESSION_ENDED`.
+
+## 10. State machine camera web
+
+| Status | Ý nghĩa | Hành động frontend |
+|---|---|---|
+| `SEARCHING` | Chưa thấy biển đạt ngưỡng | Tiếp tục gửi frame |
+| `COLLECTING` | Đã thấy biển, đang kiểm tra ổn định/độ nét | Hiện tiến độ và tiếp tục |
+| `SUCCESS` | OCR hợp lệ | Hiện crop, biển số, loại và confidence |
+| `RETRY_REQUIRED` | Ảnh mờ, OCR rỗng hoặc sai format | Hiện crop tốt nhất và nút Quét lại |
+| `PLATE_NOT_FOUND` | Hết thời gian mà chưa thấy biển | Báo điều chỉnh vị trí và quét lại |
+
+`SESSION_ENDED` và `PROCESSING_ERROR` được Flask tạo ở tầng API; chúng không
+thuộc enum `AutoScanStatus`.
+
+## 11. REST API trong `flask_app.py`
+
+| Endpoint | Input | Output chính |
+|---|---|---|
+| `GET /` | Không | `index.html` |
+| `GET /api/v1/health` | Không | Trạng thái Flask |
+| `POST /api/v1/scan` | form-data `image` | Kết quả nhận diện một ảnh |
+| `POST /api/v1/auto-scan/start` | Không | `session_id`, HTTP `201` |
+| `POST /api/v1/auto-scan/frame` | form-data `session_id`, `image` | Trạng thái phiên và kết quả nếu có |
+| `POST /api/v1/auto-scan/cancel` | JSON `session_id` | Xác nhận hủy |
+
+`_decode_uploaded_image()` đổi JPEG multipart thành ảnh BGR.
+`_image_to_data_url()` đổi crop thành Data URL để trình duyệt hiển thị trực
+tiếp; source không ghi file ảnh xuống ổ đĩa.
+
+## 12. Frontend camera tự động
+
+### `templates/index.html`
+
+Chứa hai panel:
+
+- Bên trái: camera, badge trạng thái và nút mở/tắt/quét lại.
+- Bên phải: crop tốt nhất, biển số, loại biển và confidence.
+
+Không còn form upload ảnh.
+
+### `static/js/app.js`
+
+Luồng chính:
+
+1. `openCamera()` xin quyền camera.
+2. `startAutomaticScan()` tạo session.
+3. `captureCurrentCameraFrame()` vẽ video lên canvas và tạo JPEG.
+4. `scanNextCameraFrame()` gửi frame đến Flask.
+5. Request tiếp theo chỉ được lên lịch sau khi request hiện tại hoàn tất.
+6. `renderRecognitionResult()` hiển thị Data URL và thông tin kết quả.
+7. `stopAutomaticScan()` hủy session khi cần.
+
+`AUTO_SCAN_DELAY_MS = 250` là thời gian chờ tối thiểu sau một response. Chu kỳ
+thực tế còn bao gồm thời gian YOLO và thời gian truyền request.
+
+### `static/css/style.css`
+
+- Desktop dùng grid hai cột, camera rộng hơn kết quả.
+- Badge có màu riêng cho idle, active, success, warning và error.
+- Có animation cho trạng thái đang quét.
+- Dưới `780px`, giao diện chuyển thành một cột.
+
+## 13. Luồng xử lý BSV/BSD
 
 ### BSD
 
-Ảnh crop được giữ nguyên bố cục một dòng, phóng lớn nếu cần và tăng tương phản
-trước khi OCR.
+Giữ bố cục một dòng, resize khi ảnh quá nhỏ và tăng tương phản CLAHE.
 
 ### BSV
 
-1. Crop biển vuông.
-2. Chia ảnh thành nửa trên và nửa dưới.
-3. Resize hai phần về cùng chiều cao.
+1. Chia crop thành nửa trên và nửa dưới.
+2. Resize hai phần về cùng chiều cao.
+3. Chèn khoảng trắng 12 pixel.
 4. Ghép ngang theo thứ tự đọc.
-5. Thêm khoảng trắng giữa hai phần.
-6. Phóng lớn và tăng tương phản.
-7. Gửi bản đã xử lý lên Google Vision.
+5. Resize và tăng tương phản.
 
-Ảnh hiển thị cho người dùng vẫn là crop gốc. Ảnh gửi OCR là bản đã qua
-`prepare_for_ocr()`.
+Ảnh crop gốc dùng để hiển thị. Bản ghép/tăng tương phản chỉ dùng cho OCR.
 
-Ví dụ:
+## 14. `OCRProvider` và `GoogleVisionOCR`
 
-```text
-50L
-347.98
-→ 50L34798
-→ 50L-347.98
-```
-
-## OCR và xử lý bất đồng bộ
-
-OCR chạy trong `ThreadPoolExecutor(max_workers=1)` để giao diện camera không bị
-đứng trong lúc chờ Google Vision.
-
-Worker thực hiện:
-
-```text
-GoogleVisionOCR.recognize()
-→ VietnamesePlateFormatter.format()
-→ ProcessingResult
-```
-
-Main thread gọi `_poll_processing_result()` để nhận `ProcessingResult` rồi mới
-cập nhật state. Worker không trực tiếp sửa state của controller.
-
-Các status hiện tại:
-
-| Status | Ý nghĩa | State cuối |
-|---|---|---|
-| `SUCCESS` | Có chữ và đúng định dạng đã hỗ trợ | `RESULT` |
-| `INVALID_FORMAT` | Có chữ nhưng formatter chưa nhận dạng | `RESULT` |
-| `NO_TEXT` | Google Vision không tìm thấy chữ | `ERROR` |
-| `OCR_ERROR` | API, network hoặc xử lý OCR phát sinh lỗi | `ERROR` |
-
-## Vai trò của `OCRProvider`
-
-`OCRProvider` là `Protocol` mô tả hợp đồng:
+`OCRProvider` là `Protocol`:
 
 ```python
 class OCRProvider(Protocol):
@@ -205,47 +364,83 @@ class OCRProvider(Protocol):
         ...
 ```
 
-`GoogleVisionOCR` không cần kế thừa trực tiếp từ `OCRProvider`. Python sử dụng
-structural typing: object nào có hàm `recognize(image) -> str` đúng hợp đồng đều
-có thể được truyền vào controller.
+`GoogleVisionOCR` không cần kế thừa trực tiếp. Python sử dụng structural typing:
+object nào có `recognize(image) -> str` đúng hợp đồng đều có thể được truyền vào
+controller hoặc recognition service.
 
-Khi chạy hiện tại, `main.py` truyền:
+Hiện tại `main.py` và `flask_app.py` truyền `GoogleVisionOCR`, vì vậy lời gọi:
 
 ```python
-ocr=GoogleVisionOCR(config.google_credentials_path)
+self.ocr.recognize(image)
 ```
 
-Vì vậy, lời gọi `self.ocr.recognize(...)` trong controller thực tế chạy hàm của
-`GoogleVisionOCR`.
+thực tế chạy phương thức của `GoogleVisionOCR`. Muốn thay bằng PaddleOCR hoặc
+Tesseract, tạo adapter có cùng hàm `recognize()` và đổi object tại entry point;
+logic điều phối không cần sửa.
 
-Để thay OCR khác, tạo class có cùng hàm `recognize()` rồi đổi object trong
-`main.py`; controller không cần sửa.
+`GoogleVisionOCR`:
 
-## Vì sao chưa có database và lưu ảnh?
+1. Mã hóa ảnh JPEG chất lượng 95.
+2. Gọi `text_detection(..., timeout=15)`.
+3. Ném lỗi nếu API trả lỗi.
+4. Trả chuỗi rỗng nếu không có text annotation.
+5. Trả nội dung annotation đầu tiên nếu thành công.
 
-Phiên bản hiện tại chỉ cần hiển thị ảnh và chuỗi OCR ngay trên màn hình. Vì vậy,
-controller không tạo ID, không ghi ảnh và không lưu database.
+## 15. State machine desktop
 
-Khi cần lưu lịch sử xe vào/ra, có thể thêm repository hoặc service lưu trữ rồi
-truyền vào controller mà không phải thay YOLO, `FrameSelector` hoặc OCR.
+```text
+IDLE
+  └─ nhấn C → SCANNING
+       ├─ timeout → ERROR
+       └─ FrameSelector chọn được crop → PROCESSING
+            ├─ OCR hợp lệ → RESULT
+            ├─ OCR có chữ nhưng sai format → RESULT
+            └─ OCR rỗng/API lỗi → ERROR
 
-## Vai trò của thư mục `tests`
+SCANNING, RESULT hoặc ERROR ─ nhấn R → IDLE
+PROCESSING ─ R bị khóa đến khi OCR hoàn tất
+Mọi trạng thái ─ nhấn Q → đóng chương trình
+```
 
-Các file test không tham gia khi chạy:
+OCR desktop chạy trong `ThreadPoolExecutor(max_workers=1)` để cửa sổ camera
+không bị đứng. Controller chuyển sang `PROCESSING` trước khi submit job, nên
+frame tiếp theo không thể gửi OCR lần hai.
+
+## 16. Phạm vi lưu dữ liệu
+
+Project hiện không có `ManualCaseService`, API manual case, thư mục lưu ảnh hay
+database.
+
+`AutomaticScanService` chỉ giữ tạm:
+
+- `session_id`.
+- Thời điểm bắt đầu.
+- `FrameSelector`.
+- Crop tốt nhất.
+
+Dữ liệu bị xóa khi phiên thành công, cần quét lại, hết thời gian, bị hủy hoặc
+gặp lỗi. Nút **Quét lại** chỉ tạo phiên mới, không tạo hồ sơ.
+
+## 17. Nên sửa file nào khi mở rộng?
+
+| Nhu cầu | File chính cần xem |
+|---|---|
+| Thay model hoặc thay cách lọc YOLO | `plate_detector.py`, `config.py` |
+| Điều chỉnh tiêu chí chọn frame | `frame_selector.py`, `.env` |
+| Thay đổi vòng đời phiên web | `automatic_scan_service.py`, `flask_app.py` |
+| Thêm loại biển/Regex | `plate_formatter.py` |
+| Cải thiện ảnh nghiêng hoặc ánh sáng | `image_processor.py` |
+| Thay Google Vision bằng OCR khác | Tạo adapter mới và đổi dependency ở entry point |
+| Đổi API | `flask_app.py`, sau đó đồng bộ `static/js/app.js` |
+| Đổi bố cục web | `index.html`, `style.css` |
+| Đổi hành vi camera web | `app.js` |
+| Thêm database và luồng vào/ra | Tạo module repository/service mới; không đặt logic lưu dữ liệu vào detector hoặc OCR |
+
+Sau mỗi thay đổi, chạy:
 
 ```powershell
-python main.py
+python -m unittest discover -s tests -v
 ```
 
-Vì vậy, chúng không bắt buộc đối với việc mở ứng dụng. Tuy nhiên, nên giữ test
-trong source phát triển vì chúng giúp:
-
-- Phát hiện lỗi cũ quay lại sau khi sửa code.
-- Kiểm tra logic mà không cần camera hoặc gọi Google Vision.
-- Xác nhận constructor và dependency của controller vẫn đồng bộ.
-- Tự tin hơn khi thay formatter, state machine hoặc `FrameSelector`.
-
-Khi constructor của controller có dependency mới như `frame_selector`, fake
-object trong test cũng phải được cập nhật. Ngoài test hiện có, nên bổ sung test
-riêng cho `FrameSelector`: đủ số frame, ảnh mờ, mục tiêu di chuyển, hết cửa sổ
-thời gian và chọn đúng ảnh nét nhất.
+Các test không tham gia khi chạy ứng dụng, nhưng là lớp bảo vệ giúp phát hiện
+logic cũ bị hỏng sau khi sửa source.
