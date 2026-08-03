@@ -1,0 +1,1 @@
+""" Không gian chứa các repository (lớp truy cập dữ liệu) của ứng dụng. """

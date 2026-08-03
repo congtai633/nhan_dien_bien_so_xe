@@ -16,6 +16,8 @@ from app.services.image_processor import PlateImageProcessor
 from app.services.plate_detector import YOLOPlateDetector
 from app.services.plate_formatter import VietnamesePlateFormatter
 from app.services.recognition_service import PlateRecognitionService
+from app.repositories.mongo_vehicle_access_repository import (MongoVehicleAccessRepository,)
+from app.services.vehicle_access_service import (VehicleAccessService,)
 
 
 def _image_to_data_url(image) -> str:
@@ -62,6 +64,23 @@ def create_app() -> Flask:
     automatic_scan_service = build_automatic_scan_service(
         config,
         recognition_service,
+    )
+
+    vehicle_access_repository = (
+        MongoVehicleAccessRepository(
+            uri=config.mongodb_uri,
+            database_name=config.mongodb_database,
+        )
+    )
+
+    vehicle_access_service = VehicleAccessService(
+        repository=vehicle_access_repository,
+        station_id=config.station_id,
+        camera_id=config.camera_id,
+        direction=config.camera_direction,
+        duplicate_window_seconds=(
+            config.duplicate_window_seconds
+        ),
     )
 
     @app.get("/")
@@ -212,6 +231,31 @@ def create_app() -> Flask:
 
         payload = _auto_scan_payload(result)
 
+        if result.status == AutoScanStatus.SUCCESS:
+            try:
+                storage_result = (
+                    vehicle_access_service.record_success(
+                        scan_id=session_id,
+                        result=result,
+                    )
+                )
+
+                payload["storage_status"] = (
+                    storage_result["status"]
+                )
+
+                if "event_id" in storage_result:
+                    payload["event_id"] = (
+                        storage_result["event_id"]
+                    )
+
+            except Exception:
+                app.logger.exception(
+                    "Không thể lưu kết quả nhận diện."
+                )
+
+                payload["storage_status"] = "ERROR"
+
         if result.status in {
             AutoScanStatus.SEARCHING,
             AutoScanStatus.COLLECTING,
@@ -222,6 +266,8 @@ def create_app() -> Flask:
             return jsonify(payload), 422
 
         return jsonify(payload)
+
+        
 
     @app.post("/api/v1/auto-scan/cancel")
     def cancel_auto_scan():

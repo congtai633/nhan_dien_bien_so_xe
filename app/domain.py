@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
+from datetime import datetime
 
 class AppState(str, Enum):
     IDLE = "IDLE"
@@ -83,3 +84,21 @@ class RecognitionResult:
     detection: PlateDetection
     formatted_plate: FormattedPlate
     status: str
+
+class AccessDirection(str, Enum):
+    IN = "IN"
+    OUT = "OUT"
+
+
+@dataclass(frozen=True)
+class VehicleAccessEvent:
+    scan_id: str
+    plate_compact: str
+    plate_display: str
+    raw_text: str
+    plate_type: str
+    confidence: float
+    direction: AccessDirection
+    station_id: str
+    camera_id: str
+    captured_at: datetime

@@ -9,6 +9,8 @@ from typing import Union
 
 from dotenv import load_dotenv
 
+from app.domain import AccessDirection
+
 
 PROJECT_DIR = Path(__file__).resolve().parent.parent
 
@@ -41,6 +43,12 @@ class AppConfig:
     candidate_window_seconds: float
     min_sharpness_score: float
     max_center_shift_ratio: float
+    mongodb_uri: str
+    mongodb_database: str
+    station_id: str
+    camera_id: str
+    camera_direction: AccessDirection
+    duplicate_window_seconds: float
 
     @classmethod
     def from_env(cls) -> "AppConfig":
@@ -71,7 +79,13 @@ class AppConfig:
             stable_frame_count=int(os.getenv("STABLE_FRAME_COUNT", "5")),
             candidate_window_seconds=float(os.getenv("CANDIDATE_WINDOW_SECONDS", "1.5")),
             min_sharpness_score=float(os.getenv("MIN_SHARPNESS_SCORE", "100.0")),
-            max_center_shift_ratio=float(os.getenv("MAX_CENTER_SHIFT_RATIO", "0.03"))
+            max_center_shift_ratio=float(os.getenv("MAX_CENTER_SHIFT_RATIO", "0.03")),
+            mongodb_uri=os.getenv("MONGODB_URI", "mongodb://localhost:27017"),
+            mongodb_database=os.getenv("MONGODB_DATABASE", "license_plate_system"),
+            station_id=os.getenv("STATION_ID", "GATE_01"),
+            camera_id=os.getenv("CAMERA_ID", "CAM_IN_01"),
+            camera_direction=AccessDirection(os.getenv("CAMERA_DIRECTION", "IN").upper()),
+            duplicate_window_seconds=float(os.getenv("DUPLICATE_WINDOW_SECONDS", "10.0"))
         )
         config.validate()
         return config
