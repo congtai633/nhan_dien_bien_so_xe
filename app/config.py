@@ -80,11 +80,11 @@ class AppConfig:
             candidate_window_seconds=float(os.getenv("CANDIDATE_WINDOW_SECONDS", "1.5")),
             min_sharpness_score=float(os.getenv("MIN_SHARPNESS_SCORE", "100.0")),
             max_center_shift_ratio=float(os.getenv("MAX_CENTER_SHIFT_RATIO", "0.03")),
-            mongodb_uri=os.getenv("MONGODB_URI", "mongodb://localhost:27017"),
-            mongodb_database=os.getenv("MONGODB_DATABASE", "license_plate_system"),
-            station_id=os.getenv("STATION_ID", "GATE_01"),
-            camera_id=os.getenv("CAMERA_ID", "CAM_IN_01"),
-            camera_direction=AccessDirection(os.getenv("CAMERA_DIRECTION", "IN").upper()),
+            mongodb_uri=os.getenv("MONGODB_URI","mongodb://localhost:27017",).strip(),
+            mongodb_database=os.getenv("MONGODB_DATABASE","license_plate_system",).strip(),
+            station_id=os.getenv("STATION_ID","GATE_01",).strip(),
+            camera_id=os.getenv("CAMERA_ID","WEBCAM_TEST_01",).strip(),
+            camera_direction=AccessDirection(os.getenv("CAMERA_DIRECTION", "IN").strip().upper()),
             duplicate_window_seconds=float(os.getenv("DUPLICATE_WINDOW_SECONDS", "10.0"))
         )
         config.validate()
@@ -117,3 +117,12 @@ class AppConfig:
             raise ValueError("MIN_SHARPNESS_SCORE phải lớn hơn hoặc bằng 0.")
         if not 0.0 <= self.max_center_shift_ratio <= 1.0:
             raise ValueError("MAX_CENTER_SHIFT_RATIO phải nằm trong khoảng [0, 1].")
+            
+        if not self.station_id:
+            raise ValueError("STATION_ID không được để trống.")
+        if not self.camera_id:
+            raise ValueError("CAMERA_ID không được để trống.")
+        if not self.mongodb_uri:
+            raise ValueError("MONGODB_URI không được để trống.")
+        if not self.mongodb_database:
+            raise ValueError("MONGODB_DATABASE không được để trống.")

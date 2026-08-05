@@ -5,7 +5,7 @@ import numpy as np
 
 from flask import Flask, jsonify, render_template, request
 from app.config import AppConfig
-from app.domain import AutoScanStatus
+from app.domain import AccessDirection, AutoScanStatus
 from app.services.automatic_scan_service import (
     AutomaticScanService,
     UnknownScanSessionError,
@@ -77,7 +77,6 @@ def create_app() -> Flask:
         repository=vehicle_access_repository,
         station_id=config.station_id,
         camera_id=config.camera_id,
-        direction=config.camera_direction,
         duplicate_window_seconds=(
             config.duplicate_window_seconds
         ),
@@ -172,13 +171,37 @@ def create_app() -> Flask:
 
     @app.post("/api/v1/auto-scan/start")
     def start_auto_scan():
-        """Tạo phiên để nhiều frame của một lượt xe dùng chung FrameSelector."""
+        """Tạo phiên và khóa chế độ IN/OUT do người giám sát chọn."""
+
+        data = request.get_json(silent=True) or {}
+        raw_access_mode = str(
+            data.get(
+                "access_mode",
+                config.camera_direction.value,
+            )
+        ).strip().upper()
+
+        try:
+            access_direction = AccessDirection(raw_access_mode)
+        except ValueError:
+            return jsonify(
+                {
+                    "success": False,
+                    "status": "INVALID_ACCESS_MODE",
+                    "message": "access_mode chỉ được là IN hoặc OUT.",
+                }
+            ), 400
+
+        session_id = automatic_scan_service.start_session(
+            access_direction=access_direction,
+        )
 
         return jsonify(
             {
                 "success": True,
                 "status": "SCANNING",
-                "session_id": automatic_scan_service.start_session(),
+                "session_id": session_id,
+                "access_mode": access_direction.value,
             }
         ), 201
 
@@ -233,10 +256,16 @@ def create_app() -> Flask:
 
         if result.status == AutoScanStatus.SUCCESS:
             try:
+                if result.access_direction is None:
+                    raise RuntimeError(
+                        "Phiên quét không có hướng IN/OUT."
+                    )
+
                 storage_result = (
                     vehicle_access_service.record_success(
                         scan_id=session_id,
                         result=result,
+                        direction=result.access_direction,
                     )
                 )
 
@@ -293,6 +322,9 @@ def _auto_scan_payload(result) -> dict:
         "required_stable_count": result.required_stable_count,
     }
 
+    if result.access_direction is not None:
+        payload["access_mode"] = result.access_direction.value
+
     if result.status == AutoScanStatus.SEARCHING:
         payload["message"] = "Đang tìm biển số..."
         return payload
@@ -317,6 +349,8 @@ def _auto_scan_payload(result) -> dict:
         payload.update(
             {
                 "plate": result.formatted_plate.display_text,
+                "plate_compact": result.formatted_plate.compact_text,
+                "raw_text": result.formatted_plate.raw_text,
                 "is_valid": True,
                 "message": "Đã chọn frame tốt nhất và nhận diện thành công.",
             }

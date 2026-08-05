@@ -25,6 +25,13 @@ class AutoScanStatus(str, Enum):
     PLATE_NOT_FOUND = "PLATE_NOT_FOUND"
 
 
+class AccessDirection(str, Enum):
+    """Hướng di chuyển của xe trong một phiên quét."""
+
+    IN = "IN"
+    OUT = "OUT"
+
+
 @dataclass(frozen=True)
 class BoundingBox:
     x1: int
@@ -60,6 +67,7 @@ class AutoScanResult:
     required_stable_count: int = 0
     sharpness_score: float = 0.0
     reason: str | None = None
+    access_direction: AccessDirection | None = None
 
 @dataclass(frozen=True)
 class FormattedPlate:
@@ -84,11 +92,6 @@ class RecognitionResult:
     detection: PlateDetection
     formatted_plate: FormattedPlate
     status: str
-
-class AccessDirection(str, Enum):
-    IN = "IN"
-    OUT = "OUT"
-
 
 @dataclass(frozen=True)
 class VehicleAccessEvent:

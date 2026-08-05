@@ -4,3 +4,4 @@ google-cloud-vision
 python-dotenv
 numpy
 Flask
+pymongo

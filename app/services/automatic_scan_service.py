@@ -8,11 +8,7 @@ import time
 from typing import Callable
 from uuid import uuid4
 
-from app.domain import (
-    AutoScanResult,
-    AutoScanStatus,
-    FrameCandidate,
-)
+from app.domain import (AccessDirection,AutoScanResult,AutoScanStatus,FrameCandidate,)
 from app.services.frame_selector import FrameSelector
 from app.services.recognition_service import PlateRecognitionService
 
@@ -25,6 +21,7 @@ class UnknownScanSessionError(ValueError):
 class _ScanSession:
     selector: FrameSelector
     started_at: float
+    access_direction: AccessDirection
     best_candidate: FrameCandidate | None = None
     frame_width: int = 0
     frame_height: int = 0
@@ -49,13 +46,17 @@ class AutomaticScanService:
         self._sessions: dict[str, _ScanSession] = {}
         self._sessions_lock = Lock()
 
-    def start_session(self) -> str:
-        """Tạo một phiên mới để không trộn frame của hai lượt xe."""
+    def start_session(
+        self,
+        access_direction: AccessDirection,
+    ) -> str:
+        """Tạo phiên mới và khóa hướng IN/OUT cho toàn bộ phiên."""
 
         session_id = uuid4().hex
         session = _ScanSession(
             selector=self.frame_selector_factory(),
             started_at=self._clock(),
+            access_direction=access_direction,
         )
 
         with self._sessions_lock:
@@ -87,6 +88,7 @@ class AutomaticScanService:
                 return AutoScanResult(
                     status=AutoScanStatus.SEARCHING,
                     required_stable_count=session.selector.stable_frame_count,
+                    access_direction=session.access_direction,
                 )
 
             crop, detection = candidate_data
@@ -126,6 +128,7 @@ class AutomaticScanService:
                 stable_count=session.selector.stable_count,
                 required_stable_count=session.selector.stable_frame_count,
                 sharpness_score=session.selector.last_sharpness_score,
+                access_direction=session.access_direction,
             )
 
     def cancel_session(self, session_id: str) -> None:
@@ -173,6 +176,7 @@ class AutomaticScanService:
                 stable_count=stable_count,
                 required_stable_count=stable_count,
                 sharpness_score=candidate.sharpness_score,
+                access_direction=session.access_direction,
             )
 
         return AutoScanResult(
@@ -190,6 +194,7 @@ class AutomaticScanService:
                 if result.status == "NO_TEXT"
                 else "OCR_INVALID_FORMAT"
             ),
+            access_direction=session.access_direction,
         )
 
     def _finish_after_timeout(
@@ -205,6 +210,7 @@ class AutomaticScanService:
             return AutoScanResult(
                 status=AutoScanStatus.PLATE_NOT_FOUND,
                 required_stable_count=session.selector.stable_frame_count,
+                access_direction=session.access_direction,
             )
 
         # YOLO đã thấy biển nhưng chưa có crop đủ rõ để gọi OCR.
@@ -219,6 +225,7 @@ class AutomaticScanService:
             required_stable_count=session.selector.stable_frame_count,
             sharpness_score=best.sharpness_score,
             reason="LOW_IMAGE_QUALITY",
+            access_direction=session.access_direction,
         )
 
     def _get_session(self, session_id: str) -> _ScanSession:

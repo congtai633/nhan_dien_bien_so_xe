@@ -12,7 +12,9 @@ Phiên bản hiện tại tập trung vào bài toán nhận diện:
 - Giao diện web chỉ có camera trực tiếp; đã bỏ phần chọn ảnh và nút nhận diện
   ảnh thủ công.
 - Camera nằm bên trái, ảnh crop và kết quả nằm bên phải trên màn hình desktop.
-- Không lưu ảnh, không có database, chưa phân biệt xe vào/ra và chưa điều khiển
+- Người giám sát chọn `XE VÀO` hoặc `XE RA`; lựa chọn được khóa trong suốt một
+  phiên quét và sự kiện thành công được lưu vào MongoDB.
+- Chưa lưu ảnh vào/ra, chưa ghép thành một lượt xe hoàn chỉnh và chưa điều khiển
   barrier.
 
 ## 1. Vì sao phải chọn nhiều frame?
@@ -25,6 +27,8 @@ Luồng web hiện tại giải quyết vấn đề này như sau:
 
 ```text
 Người dùng mở camera
+→ chọn chế độ XE VÀO hoặc XE RA
+→ backend khóa hướng vào session_id
 → trình duyệt gửi tuần tự nhiều frame về Flask
 → YOLO phát hiện biển số và crop ảnh
 → FrameSelector kiểm tra cùng mục tiêu, độ ổn định và độ nét
@@ -32,6 +36,7 @@ Người dùng mở camera
 → tiền xử lý ảnh BSV/BSD
 → Google Vision OCR đúng một lần
 → chuẩn hóa chuỗi và hiển thị kết quả
+→ lưu sự kiện IN/OUT hợp lệ vào MongoDB
 ```
 
 Nếu hết thời gian:
@@ -93,6 +98,7 @@ Các phím điều khiển:
 | OpenCV | Đọc/crop ảnh, đo độ nét, resize, CLAHE và mã hóa JPEG |
 | Google Cloud Vision | OCR ký tự trên ảnh biển số đã chọn |
 | Flask | Cung cấp giao diện web và REST API |
+| MongoDB và PyMongo | Lưu lịch sử sự kiện nhận diện `IN/OUT` |
 | JavaScript | Mở camera trình duyệt, lấy frame và điều khiển phiên quét |
 | HTML/CSS | Giao diện camera trái, kết quả phải và responsive |
 
@@ -106,6 +112,8 @@ nhan_dien_bien_so_xe-main/
 │   ├── domain.py
 │   ├── interfaces.py
 │   ├── ui.py
+│   ├── repositories/
+│   │   └── mongo_vehicle_access_repository.py
 │   └── services/
 │       ├── automatic_scan_service.py
 │       ├── camera_service.py
@@ -114,7 +122,8 @@ nhan_dien_bien_so_xe-main/
 │       ├── image_processor.py
 │       ├── plate_detector.py
 │       ├── plate_formatter.py
-│       └── recognition_service.py
+│       ├── recognition_service.py
+│       └── vehicle_access_service.py
 ├── models/
 │   └── best.pt
 ├── static/
@@ -122,7 +131,6 @@ nhan_dien_bien_so_xe-main/
 │   └── js/app.js
 ├── templates/
 │   └── index.html
-├── tests/
 ├── .env.example
 ├── flask_app.py
 ├── main.py
@@ -143,6 +151,7 @@ Yêu cầu:
 - Google Cloud project đã bật Cloud Vision API.
 - Service account có quyền sử dụng Vision API hoặc Application Default
   Credentials đã được cấu hình.
+- MongoDB đang chạy và Flask truy cập được URI đã cấu hình.
 
 Tạo môi trường:
 
@@ -185,6 +194,12 @@ thể để trống `GOOGLE_APPLICATION_CREDENTIALS`.
 | `CANDIDATE_WINDOW_SECONDS` | `1.5` | `> 0` | Cửa sổ theo dõi của luồng `main.py` |
 | `MIN_SHARPNESS_SCORE` | `100` | `>= 0` | Ngưỡng độ nét Variance of Laplacian |
 | `MAX_CENTER_SHIFT_RATIO` | `0.03` | `[0, 1]` | Độ lệch tâm tối đa so với đường chéo frame |
+| `MONGODB_URI` | `mongodb://localhost:27017` | Không được trống | Địa chỉ kết nối MongoDB |
+| `MONGODB_DATABASE` | `license_plate_system` | Không được trống | Tên database |
+| `STATION_ID` | `GATE_01` | Không được trống | Mã trạm/cổng kiểm soát |
+| `CAMERA_ID` | `WEBCAM_TEST_01` | Không được trống | Mã webcam đang dùng |
+| `CAMERA_DIRECTION` | `IN` | `IN` hoặc `OUT` | Hướng mặc định khi web không gửi lựa chọn |
+| `DUPLICATE_WINDOW_SECONDS` | `10` | Số giây | Chặn lưu lặp cùng biển, camera và hướng |
 
 Lưu ý:
 
@@ -239,13 +254,14 @@ Formatter làm sạch và hiển thị:
 | `GET` | `/` | Trả giao diện web |
 | `GET` | `/api/v1/health` | Kiểm tra Flask đang hoạt động |
 | `POST` | `/api/v1/scan` | Nhận diện một ảnh tĩnh từ form-data `image` |
-| `POST` | `/api/v1/auto-scan/start` | Tạo phiên quét và trả `session_id` |
+| `POST` | `/api/v1/auto-scan/start` | Nhận JSON `access_mode`, tạo phiên và trả `session_id` |
 | `POST` | `/api/v1/auto-scan/frame` | Nhận `session_id` và một frame camera |
 | `POST` | `/api/v1/auto-scan/cancel` | Hủy dữ liệu tạm của phiên |
 
-Giao diện hiện tại không dùng `/api/v1/scan`; endpoint này được giữ lại để test
-API ảnh tĩnh và tương thích với luồng cũ. Ba endpoint `/auto-scan/*` mới là luồng
-được `static/js/app.js` sử dụng.
+Giao diện hiện tại không dùng `/api/v1/scan`; endpoint này được giữ lại để nhận
+diện ảnh tĩnh trực tiếp bằng Postman hoặc ứng dụng khác, nhưng `app.js` không gọi
+endpoint này. Ba endpoint `/auto-scan/*` mới là luồng được
+`static/js/app.js` sử dụng.
 
 Các trạng thái chính của camera web:
 
@@ -270,46 +286,48 @@ Các `reason` khi cần quét lại:
 `static/js/app.js` thực hiện:
 
 1. Mở camera bằng `navigator.mediaDevices.getUserMedia()`.
-2. Gọi `/api/v1/auto-scan/start`.
-3. Chụp frame JPEG chất lượng `0.92`.
-4. Gửi frame tiếp theo sau khi request hiện tại hoàn tất, với độ trễ tối thiểu
+2. Đọc lựa chọn `XE VÀO/XE RA` và gọi `/api/v1/auto-scan/start` với JSON
+   `{"access_mode": "IN"}` hoặc `{"access_mode": "OUT"}`.
+3. Khóa hai radio trong lúc phiên đang quét.
+4. Chụp frame JPEG chất lượng `0.92`.
+5. Gửi frame tiếp theo sau khi request hiện tại hoàn tất, với độ trễ tối thiểu
    `250 ms`, để tránh các lượt YOLO chạy chồng lên nhau.
-5. Cập nhật trạng thái `SEARCHING` hoặc tiến độ `COLLECTING`.
-6. Dừng vòng quét khi nhận `SUCCESS`, `RETRY_REQUIRED`,
+6. Cập nhật trạng thái `SEARCHING` hoặc tiến độ `COLLECTING`.
+7. Dừng vòng quét khi nhận `SUCCESS`, `RETRY_REQUIRED`,
    `PLATE_NOT_FOUND` hoặc lỗi.
-7. Gọi `/api/v1/auto-scan/cancel` khi tắt camera hoặc bắt đầu lượt quét mới.
+8. Gọi `/api/v1/auto-scan/cancel` khi tắt camera hoặc bắt đầu lượt quét mới.
 
 Giao diện responsive:
 
 - Desktop: camera bên trái, kết quả bên phải.
 - Màn hình nhỏ: hai khu vực tự chuyển thành một cột.
 
-## 10. Chạy test
+## 10. Kiểm tra hệ thống thủ công
+
+Source hiện tại không sử dụng thư mục unit test. Sau khi thay đổi code, cần kiểm
+tra thủ công các luồng chính sau:
+
+1. Chạy chương trình web bằng:
+
+   ```powershell
+   python flask_app.py
+   ```
+
+2. Mở camera và xác nhận trình duyệt gửi frame bình thường.
+3. Chọn `XE VÀO`, nhận diện thành công và kiểm tra MongoDB lưu
+   `direction: "IN"`.
+4. Chọn `XE RA`, nhận diện thành công và kiểm tra MongoDB lưu
+   `direction: "OUT"`.
+5. Quét lại cùng biển số, camera và hướng trong thời gian chống trùng để xác
+   nhận hệ thống không tạo bản ghi mới.
+6. Kiểm tra trường hợp không tìm thấy biển, ảnh mờ, OCR thất bại và quét lại.
+7. Kiểm tra radio `XE VÀO/XE RA` bị khóa trong lúc phiên đang quét.
+
+Có thể kiểm tra lỗi cú pháp Python trước khi chạy bằng:
 
 ```powershell
-python -m unittest discover -s tests -v
+python -m compileall app flask_app.py main.py
 ```
-
-Hiện có **18 unit test**:
-
-- 5 test điều khiển `C/R/Q`.
-- 5 test định dạng biển số.
-- 2 test `PlateRecognitionService`.
-- 1 test `FrameSelector`.
-- 5 test `AutomaticScanService`.
-
-Test xác nhận các ranh giới quan trọng:
-
-- Không chọn frame confidence cao đầu tiên.
-- OCR chỉ được gọi một lần sau khi đủ frame ổn định.
-- Ảnh mờ hết thời gian không gọi OCR.
-- OCR rỗng yêu cầu quét lại.
-- Không phát hiện biển trả `PLATE_NOT_FOUND`.
-- Lỗi Google Vision không bị gắn nhầm thành `LOW_IMAGE_QUALITY`.
-
-Các test sử dụng fake object, không cần webcam thật và không gọi Google Vision
-thật. Test không bắt buộc để chạy ứng dụng, nhưng nên giữ lại để phát hiện lỗi
-cũ quay lại sau khi sửa code.
 
 ## 11. Giới hạn hiện tại
 
@@ -325,8 +343,9 @@ cũ quay lại sau khi sửa code.
 - Chưa khóa phiên bản package trong `requirements.txt`.
 - Flask đang chạy development server tại `127.0.0.1:5000`, chưa phải cấu hình
   triển khai production.
-- Chưa có database, lưu lịch sử, xác định xe vào/ra, tài khoản người dùng hoặc
-  điều khiển barrier.
+- MongoDB hiện mới lưu từng sự kiện `IN/OUT` trong `vehicle_access_events`.
+  Chưa có `vehicle_visits` để ghép lượt vào-ra, chưa lưu hai ảnh đối chiếu,
+  chưa có bước người giám sát xác nhận cho ra, tài khoản hoặc barrier.
 
 ## 12. Lỗi thường gặp
 

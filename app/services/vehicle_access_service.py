@@ -13,13 +13,11 @@ class VehicleAccessService:
         repository,
         station_id: str,
         camera_id: str,
-        direction: AccessDirection,
         duplicate_window_seconds: float,
     ) -> None:
         self._repository = repository
         self._station_id = station_id
         self._camera_id = camera_id
-        self._direction = direction
         self._duplicate_window_seconds = (
             duplicate_window_seconds
         )
@@ -28,6 +26,7 @@ class VehicleAccessService:
         self,
         scan_id: str,
         result,
+        direction: AccessDirection,
     ) -> dict:
         formatted = result.formatted_plate
         detection = result.detection
@@ -51,7 +50,7 @@ class VehicleAccessService:
         is_duplicate = self._repository.has_recent_event(
             plate_compact=formatted.compact_text,
             camera_id=self._camera_id,
-            direction=self._direction,
+            direction=direction,
             since=since,
         )
 
@@ -67,7 +66,7 @@ class VehicleAccessService:
             raw_text=formatted.raw_text,
             plate_type=detection.class_name,
             confidence=detection.confidence,
-            direction=self._direction,
+            direction=direction,
             station_id=self._station_id,
             camera_id=self._camera_id,
             captured_at=captured_at,

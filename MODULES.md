@@ -26,7 +26,6 @@ Hệ thống sử dụng **composition** và **dependency injection**:
 - `main.py` và `flask_app.py` là nơi tạo object thật.
 - Controller/service nhận dependency qua constructor.
 - Logic điều phối không tự khởi tạo YOLO hoặc Google Vision.
-- Fake object có thể được truyền vào unit test mà không cần camera hay API thật.
 
 ## 2. Kiến trúc desktop
 
@@ -53,12 +52,15 @@ index.html + style.css
 → app.js mở camera trình duyệt
 → Flask REST API
 → AutomaticScanService
-   ├─ một FrameSelector cho mỗi session_id
+   ├─ một FrameSelector và hướng IN/OUT cho mỗi session_id
    └─ PlateRecognitionService
       ├─ YOLOPlateDetector
       ├─ PlateImageProcessor
       ├─ GoogleVisionOCR
       └─ VietnamesePlateFormatter
+→ VehicleAccessService
+→ MongoVehicleAccessRepository
+→ MongoDB collection vehicle_access_events
 ```
 
 Camera web do trình duyệt mở bằng `getUserMedia()`. Backend Flask không dùng
@@ -90,31 +92,25 @@ Camera web do trình duyệt mở bằng `getUserMedia()`. Backend Flask không 
 | `plate_formatter.py` | Làm sạch, sửa ký tự dễ nhầm theo vị trí, thêm dấu và kiểm tra Regex | Không gọi Google Vision |
 | `recognition_service.py` | Cung cấp ranh giới `detect_candidate()` và `recognize_candidate()` | Không giữ phiên nhiều frame |
 | `automatic_scan_service.py` | Giữ session web, đưa frame qua selector, quyết định lúc OCR và đóng phiên | Không lưu database hoặc ảnh |
+| `vehicle_access_service.py` | Kiểm tra kết quả hợp lệ, chống trùng và tạo sự kiện theo hướng của session | Không nhận diện ảnh hoặc quyết định cho xe ra |
+
+### Repository
+
+| File | Trách nhiệm |
+|---|---|
+| `mongo_vehicle_access_repository.py` | Tạo index, kiểm tra sự kiện gần nhất và lưu `VehicleAccessEvent` vào MongoDB |
 
 ### Frontend
 
 | File | Trách nhiệm |
 |---|---|
-| `templates/index.html` | Khung giao diện camera trái, kết quả phải, nút mở/tắt/quét lại |
+| `templates/index.html` | Khung giao diện, radio `XE VÀO/XE RA`, nút mở/tắt/quét lại |
 | `static/css/style.css` | Bố cục, màu trạng thái, animation quét và responsive |
-| `static/js/app.js` | Mở camera, tạo session, gửi frame tuần tự, cập nhật trạng thái và hủy session |
+| `static/js/app.js` | Gửi hướng khi tạo session, khóa radio trong lúc quét, gửi frame và hủy session |
 
 Giao diện hiện tại không còn input chọn file, preview ảnh upload hoặc nút nhận
-diện ảnh thủ công. API ảnh tĩnh `/api/v1/scan` vẫn tồn tại để kiểm thử và tương
-thích, nhưng `app.js` không gọi endpoint này.
-
-### Test
-
-| File | Số test | Nội dung |
-|---|---:|---|
-| `tests/test_controller_controls.py` | 5 | Phím `C/R/Q`, reset và khóa reload khi OCR đang chạy |
-| `tests/test_plate_formatter.py` | 5 | Định dạng biển xe, biển hai dòng và ký tự dễ nhầm |
-| `tests/test_recognition_service.py` | 2 | Nhận diện ảnh tĩnh thành công và không có detection |
-| `tests/test_frame_selector.py` | 1 | Không chọn frame confidence cao đầu tiên |
-| `tests/test_automatic_scan_service.py` | 5 | OCR một lần, retry, timeout, không có biển và lỗi API |
-| `tests/_cv2_compat.py` | — | Cung cấp OpenCV giả cho môi trường unit test nhẹ |
-
-Tổng cộng hiện có **18 unit test**.
+diện ảnh thủ công. API ảnh tĩnh `/api/v1/scan` vẫn tồn tại để nhận diện ảnh trực
+tiếp bằng Postman hoặc ứng dụng khác, nhưng `app.js` không gọi endpoint này.
 
 ## 5. Các kiểu dữ liệu trong `app/domain.py`
 
@@ -122,13 +118,15 @@ Tổng cộng hiện có **18 unit test**.
 |---|---|
 | `AppState` | State của chương trình desktop |
 | `AutoScanStatus` | Status của phiên camera web |
+| `AccessDirection` | Hướng `IN` hoặc `OUT` của phiên/sự kiện |
 | `BoundingBox` | Tọa độ `x1, y1, x2, y2` |
 | `PlateDetection` | Bounding box, nhãn `BSD/BSV` và confidence |
 | `FrameCandidate` | Crop, detection và sharpness |
 | `FormattedPlate` | Chuỗi thô, chuỗi làm sạch, chuỗi hiển thị và cờ hợp lệ |
 | `ProcessingResult` | Kết quả worker OCR trả về controller desktop |
 | `RecognitionResult` | Kết quả nhận diện một ảnh/crop |
-| `AutoScanResult` | Kết quả sau mỗi frame của phiên web |
+| `AutoScanResult` | Kết quả sau mỗi frame, kèm hướng đã khóa của phiên web |
+| `VehicleAccessEvent` | Dữ liệu một lần nhận diện hợp lệ được lưu vào MongoDB |
 
 `domain.py` dùng `object` cho ảnh để không buộc tầng domain phải import
 `numpy` hoặc OpenCV.
@@ -245,7 +243,9 @@ HTTP không tự nhớ frame nào thuộc cùng một lượt quét. `start_sess
 
 - Frame của hai trình duyệt không bị trộn.
 - Quét lại không dùng dữ liệu của lượt cũ.
-- Mỗi session có một `FrameSelector`, thời gian bắt đầu và ứng viên tốt nhất.
+- Mỗi session có hướng `IN/OUT`, một `FrameSelector`, thời gian bắt đầu và ứng
+  viên tốt nhất.
+- Người dùng không thể đổi hướng của phiên đang chạy giữa các frame.
 
 ### Luồng `observe()`
 
@@ -297,7 +297,7 @@ thuộc enum `AutoScanStatus`.
 | `GET /` | Không | `index.html` |
 | `GET /api/v1/health` | Không | Trạng thái Flask |
 | `POST /api/v1/scan` | form-data `image` | Kết quả nhận diện một ảnh |
-| `POST /api/v1/auto-scan/start` | Không | `session_id`, HTTP `201` |
+| `POST /api/v1/auto-scan/start` | JSON `access_mode`: `IN` hoặc `OUT` | `session_id`, `access_mode`, HTTP `201` |
 | `POST /api/v1/auto-scan/frame` | form-data `session_id`, `image` | Trạng thái phiên và kết quả nếu có |
 | `POST /api/v1/auto-scan/cancel` | JSON `session_id` | Xác nhận hủy |
 
@@ -311,7 +311,7 @@ tiếp; source không ghi file ảnh xuống ổ đĩa.
 
 Chứa hai panel:
 
-- Bên trái: camera, badge trạng thái và nút mở/tắt/quét lại.
+- Bên trái: chọn `XE VÀO/XE RA`, camera, badge và nút mở/tắt/quét lại.
 - Bên phải: crop tốt nhất, biển số, loại biển và confidence.
 
 Không còn form upload ảnh.
@@ -321,7 +321,7 @@ Không còn form upload ảnh.
 Luồng chính:
 
 1. `openCamera()` xin quyền camera.
-2. `startAutomaticScan()` tạo session.
+2. `startAutomaticScan()` gửi hướng đã chọn và tạo session.
 3. `captureCurrentCameraFrame()` vẽ video lên canvas và tạo JPEG.
 4. `scanNextCameraFrame()` gửi frame đến Flask.
 5. Request tiếp theo chỉ được lên lịch sau khi request hiện tại hoàn tất.
@@ -408,8 +408,9 @@ frame tiếp theo không thể gửi OCR lần hai.
 
 ## 16. Phạm vi lưu dữ liệu
 
-Project hiện không có `ManualCaseService`, API manual case, thư mục lưu ảnh hay
-database.
+Project hiện có MongoDB để lưu từng sự kiện nhận diện thành công, nhưng chưa có
+`ManualCaseService`, API manual case, thư mục lưu ảnh hoặc collection ghép lượt
+xe vào-ra.
 
 `AutomaticScanService` chỉ giữ tạm:
 
@@ -417,6 +418,7 @@ database.
 - Thời điểm bắt đầu.
 - `FrameSelector`.
 - Crop tốt nhất.
+- Hướng `IN/OUT` đã chọn.
 
 Dữ liệu bị xóa khi phiên thành công, cần quét lại, hết thời gian, bị hủy hoặc
 gặp lỗi. Nút **Quét lại** chỉ tạo phiên mới, không tạo hồ sơ.
@@ -434,13 +436,14 @@ gặp lỗi. Nút **Quét lại** chỉ tạo phiên mới, không tạo hồ s�
 | Đổi API | `flask_app.py`, sau đó đồng bộ `static/js/app.js` |
 | Đổi bố cục web | `index.html`, `style.css` |
 | Đổi hành vi camera web | `app.js` |
-| Thêm database và luồng vào/ra | Tạo module repository/service mới; không đặt logic lưu dữ liệu vào detector hoặc OCR |
+| Ghép lượt vào-ra và đối chiếu ảnh | Thêm `vehicle_visits` và service nghiệp vụ; giữ detector/OCR độc lập |
 
-Sau mỗi thay đổi, chạy:
+Sau mỗi thay đổi, nên kiểm tra lỗi cú pháp:
 
 ```powershell
-python -m unittest discover -s tests -v
+python -m compileall app flask_app.py main.py
 ```
 
-Các test không tham gia khi chạy ứng dụng, nhưng là lớp bảo vệ giúp phát hiện
-logic cũ bị hỏng sau khi sửa source.
+Sau đó chạy lại chương trình và kiểm tra thủ công luồng camera, YOLO,
+FrameSelector, OCR, định dạng biển số, lựa chọn `IN/OUT` và dữ liệu được lưu
+trong MongoDB.

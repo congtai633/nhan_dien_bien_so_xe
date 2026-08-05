@@ -17,6 +17,9 @@ const closeCameraButton = document.getElementById("close-camera");
 const cameraCanvas = document.getElementById("camera-canvas");
 const cameraOverlay = document.getElementById("camera-overlay");
 const message = document.getElementById("message");
+const accessModeInputs = document.querySelectorAll(
+    'input[name="access_mode"]'
+);
 
 const AUTO_SCAN_DELAY_MS = 250;
 
@@ -131,6 +134,12 @@ async function startAutomaticScan() {
 
     const response = await fetch("/api/v1/auto-scan/start", {
         method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+            access_mode: getSelectedAccessMode(),
+        }),
     });
     const data = await readJsonResponse(response);
 
@@ -568,6 +577,18 @@ function setBadge(element, text, state) {
 
 function setScanning(isScanning) {
     scanIndicator.hidden = !isScanning;
+
+    accessModeInputs.forEach((input) => {
+        input.disabled = isScanning;
+    });
+}
+
+function getSelectedAccessMode() {
+    const selected = document.querySelector(
+        'input[name="access_mode"]:checked'
+    );
+
+    return selected?.value || "IN";
 }
 
 function showStatus(statusText, type) {
