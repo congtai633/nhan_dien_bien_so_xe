@@ -3,6 +3,8 @@ const resultContent = document.getElementById("resultContent");
 const plateText = document.getElementById("plateText");
 const plateType = document.getElementById("plateType");
 const confidence = document.getElementById("confidence");
+const entryTime = document.getElementById("entryTime");
+const exitTime = document.getElementById("exitTime");
 const cropImage = document.getElementById("cropImage");
 const statusMessage = document.getElementById("statusMessage");
 const resultStatusBadge = document.getElementById("result-status-badge");
@@ -417,6 +419,13 @@ function renderRecognitionResult(data) {
     confidence.textContent =
         `${confidencePercent.toFixed(2)}%`;
 
+    entryTime.textContent = formatVisitTime(data.entry_time);
+    exitTime.textContent = data.exit_time
+        ? formatVisitTime(data.exit_time)
+        : data.visit_status === "INSIDE"
+            ? "Chưa ra"
+            : "--";
+
     emptyResult.hidden = true;
     resultContent.hidden = false;
 }
@@ -481,9 +490,33 @@ function resetResult() {
     plateText.textContent = "--";
     plateType.textContent = "--";
     confidence.textContent = "--";
+    entryTime.textContent = "--";
+    exitTime.textContent = "--";
 
     setBadge(resultStatusBadge, "Đang chờ", "idle");
     showStatus("", "");
+}
+
+function formatVisitTime(value) {
+    if (!value) {
+        return "--";
+    }
+
+    const parsedTime = new Date(value);
+
+    if (Number.isNaN(parsedTime.getTime())) {
+        return "--";
+    }
+
+    const time = parsedTime.toLocaleTimeString("vi-VN", {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+    });
+    const date = parsedTime.toLocaleDateString("vi-VN");
+
+    return `${time} ${date}`;
 }
 
 function updateBoundingBox(data) {

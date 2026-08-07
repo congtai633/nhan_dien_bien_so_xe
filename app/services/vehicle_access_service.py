@@ -44,16 +44,22 @@ class VehicleAccessService:
 
         captured_at = datetime.now(timezone.utc)
 
-        has_open_visit = self._repository.has_open_visit(
+        open_visit = self._repository.find_open_visit(
             formatted.compact_text
         )
 
-        if direction == AccessDirection.IN and has_open_visit:
+        if direction == AccessDirection.IN and open_visit is not None:
             return {
                 "status": "ALREADY_INSIDE",
+                **self._visit_time_payload(
+                    visit_id=open_visit["visit_id"],
+                    visit_status=open_visit["visit_status"],
+                    entry_time=open_visit["entry_time"],
+                    exit_time=open_visit["exit_time"],
+                ),
             }
 
-        if direction == AccessDirection.OUT and not has_open_visit:
+        if direction == AccessDirection.OUT and open_visit is None:
             return {
                 "status": "NOT_INSIDE",
             }
@@ -97,6 +103,8 @@ class VehicleAccessService:
 
             operation_status = "ENTRY_RECORDED"
             visit_status = VehicleVisitStatus.INSIDE.value
+            entry_time = captured_at
+            exit_time = None
         else:
             visit_id = self._repository.close_open_visit(event)
 
@@ -107,12 +115,48 @@ class VehicleAccessService:
 
             operation_status = "EXIT_RECORDED"
             visit_status = VehicleVisitStatus.COMPLETED.value
+            entry_time = open_visit["entry_time"]
+            exit_time = captured_at
 
         event_id = self._repository.save(event)
 
         return {
             "status": operation_status,
             "event_id": event_id,
+            **self._visit_time_payload(
+                visit_id=visit_id,
+                visit_status=visit_status,
+                entry_time=entry_time,
+                exit_time=exit_time,
+            ),
+        }
+
+    @staticmethod
+    def _visit_time_payload(
+        visit_id: str,
+        visit_status: str,
+        entry_time: datetime | None,
+        exit_time: datetime | None,
+    ) -> dict:
+        """Chuẩn hóa giờ MongoDB thành ISO 8601 UTC cho frontend."""
+
+        return {
             "visit_id": visit_id,
             "visit_status": visit_status,
+            "entry_time": VehicleAccessService._to_utc_iso(
+                entry_time
+            ),
+            "exit_time": VehicleAccessService._to_utc_iso(
+                exit_time
+            ),
         }
+
+    @staticmethod
+    def _to_utc_iso(value: datetime | None) -> str | None:
+        if value is None:
+            return None
+
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+
+        return value.astimezone(timezone.utc).isoformat()

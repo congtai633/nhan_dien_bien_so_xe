@@ -89,6 +89,14 @@ class MongoVehicleAccessRepository:
     ) -> bool:
         """Kiểm tra biển số có lượt vào chưa được đóng hay không."""
 
+        return self.find_open_visit(plate_compact) is not None
+
+    def find_open_visit(
+        self,
+        plate_compact: str,
+    ) -> dict | None:
+        """Tìm lượt đang mở và trả dữ liệu giờ vào để hiển thị."""
+
         document = self._visits.find_one(
             {
                 "plate_compact": plate_compact,
@@ -96,10 +104,21 @@ class MongoVehicleAccessRepository:
             },
             {
                 "_id": 1,
+                "entry.captured_at": 1,
             },
         )
 
-        return document is not None
+        if document is None:
+            return None
+
+        entry = document.get("entry") or {}
+
+        return {
+            "visit_id": str(document["_id"]),
+            "visit_status": VehicleVisitStatus.INSIDE.value,
+            "entry_time": entry.get("captured_at"),
+            "exit_time": None,
+        }
 
     def create_open_visit(
         self,

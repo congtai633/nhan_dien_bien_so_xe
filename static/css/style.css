@@ -544,18 +544,46 @@ h1 {
     margin-top: 10px;
 }
 
-.metric-card {
+.visit-times {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.metric-card,
+.time-card {
     padding: 14px;
     border: 1px solid var(--border);
     border-radius: 13px;
     background: var(--surface-muted);
 }
 
-.metric-card strong {
+.time-card {
+    border-color: #bfdbfe;
+    background: var(--primary-soft);
+}
+
+.time-card span {
+    display: block;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 650;
+}
+
+.metric-card strong,
+.time-card strong {
     display: block;
     margin-top: 7px;
     color: #334155;
     font-size: 17px;
+}
+
+.time-card strong {
+    color: #13387b;
+    font-size: 14px;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.4;
 }
 
 .result-message {
@@ -677,7 +705,8 @@ h1 {
         grid-template-columns: 1fr;
     }
 
-    .result-metrics {
+    .result-metrics,
+    .visit-times {
         grid-template-columns: 1fr;
     }
 }

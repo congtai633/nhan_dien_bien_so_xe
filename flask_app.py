@@ -277,6 +277,8 @@ def create_app() -> Flask:
                     "event_id",
                     "visit_id",
                     "visit_status",
+                    "entry_time",
+                    "exit_time",
                 ):
                     if field in storage_result:
                         payload[field] = storage_result[field]
