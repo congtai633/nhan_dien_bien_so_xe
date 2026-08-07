@@ -273,10 +273,18 @@ def create_app() -> Flask:
                     storage_result["status"]
                 )
 
-                if "event_id" in storage_result:
-                    payload["event_id"] = (
-                        storage_result["event_id"]
-                    )
+                for field in (
+                    "event_id",
+                    "visit_id",
+                    "visit_status",
+                ):
+                    if field in storage_result:
+                        payload[field] = storage_result[field]
+
+                payload["message"] = _storage_message(
+                    storage_result["status"],
+                    result.access_direction,
+                )
 
             except Exception:
                 app.logger.exception(
@@ -284,6 +292,10 @@ def create_app() -> Flask:
                 )
 
                 payload["storage_status"] = "ERROR"
+                payload["message"] = (
+                    "Đã nhận diện biển số nhưng không thể kiểm tra "
+                    "hoặc lưu dữ liệu MongoDB."
+                )
 
         if result.status in {
             AutoScanStatus.SEARCHING,
@@ -415,6 +427,38 @@ def _retry_message(reason: str | None) -> str:
     return messages.get(
         reason,
         "Chưa nhận diện được biển số đáng tin cậy. Hãy quét lại.",
+    )
+
+
+def _storage_message(
+    storage_status: str,
+    direction: AccessDirection,
+) -> str:
+    """Thông báo nghiệp vụ sau khi OCR nhận diện thành công."""
+
+    messages = {
+        "ENTRY_RECORDED": "Đã ghi nhận xe vào bãi.",
+        "EXIT_RECORDED": "Đã ghi nhận xe ra khỏi bãi.",
+        "ALREADY_INSIDE": (
+            "Biển số này đã có lượt vào và chưa ghi nhận xe ra."
+        ),
+        "NOT_INSIDE": (
+            "Không tìm thấy lượt xe vào đang mở cho biển số này."
+        ),
+        "DUPLICATE": (
+            "Lượt nhận diện bị trùng trong thời gian chống lặp nên "
+            "không lưu thêm dữ liệu."
+        ),
+        "SKIPPED": "Kết quả không đủ điều kiện để lưu dữ liệu.",
+    }
+
+    return messages.get(
+        storage_status,
+        (
+            "Đã xử lý lượt xe vào."
+            if direction == AccessDirection.IN
+            else "Đã xử lý lượt xe ra."
+        ),
     )
 
 

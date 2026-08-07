@@ -4,6 +4,7 @@ from app.domain import (
     AccessDirection,
     AutoScanStatus,
     VehicleAccessEvent,
+    VehicleVisitStatus,
 )
 
 
@@ -43,6 +44,20 @@ class VehicleAccessService:
 
         captured_at = datetime.now(timezone.utc)
 
+        has_open_visit = self._repository.has_open_visit(
+            formatted.compact_text
+        )
+
+        if direction == AccessDirection.IN and has_open_visit:
+            return {
+                "status": "ALREADY_INSIDE",
+            }
+
+        if direction == AccessDirection.OUT and not has_open_visit:
+            return {
+                "status": "NOT_INSIDE",
+            }
+
         since = captured_at - timedelta(
             seconds=self._duplicate_window_seconds
         )
@@ -72,9 +87,32 @@ class VehicleAccessService:
             captured_at=captured_at,
         )
 
+        if direction == AccessDirection.IN:
+            visit_id = self._repository.create_open_visit(event)
+
+            if visit_id is None:
+                return {
+                    "status": "ALREADY_INSIDE",
+                }
+
+            operation_status = "ENTRY_RECORDED"
+            visit_status = VehicleVisitStatus.INSIDE.value
+        else:
+            visit_id = self._repository.close_open_visit(event)
+
+            if visit_id is None:
+                return {
+                    "status": "NOT_INSIDE",
+                }
+
+            operation_status = "EXIT_RECORDED"
+            visit_status = VehicleVisitStatus.COMPLETED.value
+
         event_id = self._repository.save(event)
 
         return {
-            "status": "SAVED",
+            "status": operation_status,
             "event_id": event_id,
+            "visit_id": visit_id,
+            "visit_status": visit_status,
         }

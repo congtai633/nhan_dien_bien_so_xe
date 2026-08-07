@@ -32,6 +32,13 @@ class AccessDirection(str, Enum):
     OUT = "OUT"
 
 
+class VehicleVisitStatus(str, Enum):
+    """Trạng thái của một lượt xe từ lúc vào đến lúc ra."""
+
+    INSIDE = "INSIDE"
+    COMPLETED = "COMPLETED"
+
+
 @dataclass(frozen=True)
 class BoundingBox:
     x1: int

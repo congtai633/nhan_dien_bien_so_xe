@@ -571,6 +571,10 @@ h1 {
     color: var(--success);
 }
 
+.result-message.warning {
+    color: var(--warning);
+}
+
 .result-message.error {
     color: var(--error);
 }

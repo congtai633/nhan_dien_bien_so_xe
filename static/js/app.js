@@ -230,13 +230,7 @@ async function scanNextCameraFrame() {
         restartScanButton.hidden = false;
 
         if (data.status === "SUCCESS") {
-            message.textContent =
-                "Đã chọn và crop khung hình biển số rõ nhất.";
-            setBadge(resultStatusBadge, "Thành công", "success");
-            showStatus(
-                data.message || "Nhận diện hoàn tất.",
-                "success"
-            );
+            renderAccessResult(data);
             return;
         }
 
@@ -425,6 +419,56 @@ function renderRecognitionResult(data) {
 
     emptyResult.hidden = true;
     resultContent.hidden = false;
+}
+
+function renderAccessResult(data) {
+    const status = data.storage_status;
+
+    if (["ENTRY_RECORDED", "EXIT_RECORDED"].includes(status)) {
+        message.textContent =
+            status === "ENTRY_RECORDED"
+                ? "Đã ghi nhận xe vào bãi."
+                : "Đã ghi nhận xe ra khỏi bãi.";
+        setBadge(resultStatusBadge, "Đã ghi nhận", "success");
+        showStatus(data.message, "success");
+        return;
+    }
+
+    if (status === "ALREADY_INSIDE") {
+        message.textContent =
+            "Xe đã vào trước đó và chưa có lượt ra.";
+        setBadge(resultStatusBadge, "Xe đã ở trong bãi", "warning");
+        showStatus(data.message, "warning");
+        return;
+    }
+
+    if (status === "NOT_INSIDE") {
+        message.textContent =
+            "Không tìm thấy lượt vào để thực hiện xe ra.";
+        setBadge(resultStatusBadge, "Không có lượt vào", "warning");
+        showStatus(data.message, "warning");
+        return;
+    }
+
+    if (status === "DUPLICATE") {
+        message.textContent = "Lượt quét trùng nên không lưu thêm.";
+        setBadge(resultStatusBadge, "Dữ liệu trùng", "warning");
+        showStatus(data.message, "warning");
+        return;
+    }
+
+    if (status === "ERROR") {
+        message.textContent =
+            "Nhận diện thành công nhưng lưu dữ liệu thất bại.";
+        setBadge(resultStatusBadge, "Lỗi lưu dữ liệu", "error");
+        showStatus(data.message, "error");
+        return;
+    }
+
+    message.textContent =
+        "Đã chọn và crop khung hình biển số rõ nhất.";
+    setBadge(resultStatusBadge, "Thành công", "success");
+    showStatus(data.message || "Nhận diện hoàn tất.", "success");
 }
 
 function resetResult() {

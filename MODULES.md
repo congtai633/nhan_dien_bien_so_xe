@@ -60,7 +60,9 @@ index.html + style.css
       └─ VietnamesePlateFormatter
 → VehicleAccessService
 → MongoVehicleAccessRepository
-→ MongoDB collection vehicle_access_events
+→ MongoDB
+   ├─ vehicle_access_events: lịch sử sự kiện được chấp nhận
+   └─ vehicle_visits: một lượt từ lúc xe vào đến lúc xe ra
 ```
 
 Camera web do trình duyệt mở bằng `getUserMedia()`. Backend Flask không dùng
@@ -92,13 +94,13 @@ Camera web do trình duyệt mở bằng `getUserMedia()`. Backend Flask không 
 | `plate_formatter.py` | Làm sạch, sửa ký tự dễ nhầm theo vị trí, thêm dấu và kiểm tra Regex | Không gọi Google Vision |
 | `recognition_service.py` | Cung cấp ranh giới `detect_candidate()` và `recognize_candidate()` | Không giữ phiên nhiều frame |
 | `automatic_scan_service.py` | Giữ session web, đưa frame qua selector, quyết định lúc OCR và đóng phiên | Không lưu database hoặc ảnh |
-| `vehicle_access_service.py` | Kiểm tra kết quả hợp lệ, chống trùng và tạo sự kiện theo hướng của session | Không nhận diện ảnh hoặc quyết định cho xe ra |
+| `vehicle_access_service.py` | Kiểm tra xe đang ở trong bãi, chống trùng, tạo lượt vào hoặc đóng lượt ra | Không nhận diện ảnh |
 
 ### Repository
 
 | File | Trách nhiệm |
 |---|---|
-| `mongo_vehicle_access_repository.py` | Tạo index, kiểm tra sự kiện gần nhất và lưu `VehicleAccessEvent` vào MongoDB |
+| `mongo_vehicle_access_repository.py` | Quản lý `vehicle_access_events`, tạo/tìm/đóng lượt trong `vehicle_visits` và tạo index chống hai lượt đang mở |
 
 ### Frontend
 
@@ -119,6 +121,7 @@ tiếp bằng Postman hoặc ứng dụng khác, nhưng `app.js` không gọi en
 | `AppState` | State của chương trình desktop |
 | `AutoScanStatus` | Status của phiên camera web |
 | `AccessDirection` | Hướng `IN` hoặc `OUT` của phiên/sự kiện |
+| `VehicleVisitStatus` | Trạng thái lượt xe: `INSIDE` hoặc `COMPLETED` |
 | `BoundingBox` | Tọa độ `x1, y1, x2, y2` |
 | `PlateDetection` | Bounding box, nhãn `BSD/BSV` và confidence |
 | `FrameCandidate` | Crop, detection và sharpness |
@@ -408,9 +411,25 @@ frame tiếp theo không thể gửi OCR lần hai.
 
 ## 16. Phạm vi lưu dữ liệu
 
-Project hiện có MongoDB để lưu từng sự kiện nhận diện thành công, nhưng chưa có
-`ManualCaseService`, API manual case, thư mục lưu ảnh hoặc collection ghép lượt
-xe vào-ra.
+Project dùng hai collection MongoDB:
+
+- `vehicle_access_events`: lưu lịch sử những sự kiện `IN/OUT` đã được chấp nhận.
+- `vehicle_visits`: ghép một lần xe vào và một lần xe ra thành cùng một lượt.
+
+Quy tắc của `VehicleAccessService`:
+
+| Yêu cầu | Trạng thái hiện tại | Kết quả |
+|---|---|---|
+| `IN` | Chưa có lượt mở | `ENTRY_RECORDED`, tạo lượt `INSIDE` |
+| `IN` | Đã có lượt `INSIDE` | `ALREADY_INSIDE`, không tạo lượt mới |
+| `OUT` | Có lượt `INSIDE` | `EXIT_RECORDED`, cập nhật `COMPLETED` |
+| `OUT` | Không có lượt mở | `NOT_INSIDE`, không cập nhật lượt |
+
+Unique partial index trên `plate_compact` chỉ áp dụng cho document có trạng thái
+`INSIDE`. Vì vậy một biển có thể có nhiều lượt cũ `COMPLETED`, nhưng không thể
+có hai lượt đang mở kể cả khi hai request `IN` đến gần như đồng thời.
+
+Project chưa có `ManualCaseService`, API manual case hoặc thư mục lưu ảnh.
 
 `AutomaticScanService` chỉ giữ tạm:
 
@@ -436,7 +455,8 @@ gặp lỗi. Nút **Quét lại** chỉ tạo phiên mới, không tạo hồ s�
 | Đổi API | `flask_app.py`, sau đó đồng bộ `static/js/app.js` |
 | Đổi bố cục web | `index.html`, `style.css` |
 | Đổi hành vi camera web | `app.js` |
-| Ghép lượt vào-ra và đối chiếu ảnh | Thêm `vehicle_visits` và service nghiệp vụ; giữ detector/OCR độc lập |
+| Thay đổi quy tắc ghép lượt vào-ra | `vehicle_access_service.py`, `mongo_vehicle_access_repository.py`, rồi đồng bộ `flask_app.py` và `app.js` |
+| Thêm đối chiếu ảnh vào-ra | Thêm tầng lưu ảnh và trường tham chiếu trong `vehicle_visits`; giữ detector/OCR độc lập |
 
 Sau mỗi thay đổi, nên kiểm tra lỗi cú pháp:
 
